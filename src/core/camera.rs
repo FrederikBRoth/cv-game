@@ -1,5 +1,4 @@
-use cgmath::{EuclideanSpace, InnerSpace, Point3, SquareMatrix, Transform, Vector3, Vector4};
-use log::warn;
+use cgmath::{EuclideanSpace, InnerSpace, Point3, SquareMatrix, Vector3, Vector4};
 use winit::{
     event::{ElementState, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
@@ -20,7 +19,7 @@ pub struct Camera {
 impl Camera {
     fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
         let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        let ortho = cgmath::ortho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
+        // let ortho = cgmath::ortho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
         proj * view
     }

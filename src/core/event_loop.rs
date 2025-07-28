@@ -1,14 +1,8 @@
-use super::camera::{Camera, CameraController, CameraUniform};
-use cgmath::prelude::*;
-use instant::Instant;
-use std::{iter, sync::Arc};
-use wgpu::util::DeviceExt;
+use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalSize,
     event::*,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{KeyCode, PhysicalKey},
+    event_loop::{ActiveEventLoop, EventLoop},
     window::{Window, WindowId},
 };
 

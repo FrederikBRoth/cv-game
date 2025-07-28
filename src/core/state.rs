@@ -2,21 +2,19 @@ use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
 
-use cgmath::{prelude::*, Vector2};
+use cgmath::Vector2;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
-use winit::event::{KeyEvent, WindowEvent};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::event::WindowEvent;
 use winit::window::Window;
 
 use crate::core::game_loop::Chunk;
 use crate::entity::entity::{
-    instances_list, instances_list2, instances_list_circle, make_cube_primitive,
-    make_cube_textured, InstanceController, InstanceRaw, Mesh, PrimitiveMesh, TexturedVertex,
+    instances_list, instances_list_circle, make_cube_primitive, make_cube_textured,
+    InstanceController, Mesh,
 };
 use crate::entity::primitive_texture::PrimitiveTexture;
 use crate::entity::texture::Texture;
-use crate::helpers::animation::AnimationHandler;
 
 use super::camera::{Camera, CameraController, CameraUniform};
 use super::game_loop::Gameloop;
@@ -209,7 +207,7 @@ impl State {
                             &queue,
                             camera_bind_group_layout.clone(),
                         );
-                        let mut instance_controller = InstanceController::new(
+                        let instance_controller = InstanceController::new(
                             instances_list_circle(origin, chunk_size),
                             0,
                             mb,

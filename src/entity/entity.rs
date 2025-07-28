@@ -1,5 +1,3 @@
-use std::{io::empty, u32};
-
 use crate::{
     core::game_loop::Chunk,
     entity::{
@@ -8,9 +6,7 @@ use crate::{
     },
 };
 use cgmath::{prelude::*, Vector2, Vector3};
-use wgpu::{
-    util::DeviceExt, wgc::device, BindGroupLayout, RenderPass, SurfaceConfiguration, TextureFormat,
-};
+use wgpu::{util::DeviceExt, BindGroupLayout, RenderPass, TextureFormat};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -66,7 +62,6 @@ impl PrimitiveVertex {
             ],
         }
     }
-    fn make_mesh_buffer(&self) {}
 }
 
 #[rustfmt::skip]
@@ -269,7 +264,7 @@ pub fn instances_list(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Instance> {
             } else {
                 cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0))
             };
-            let default_color = cgmath::Vector3::new(0.0, 0.0, 0.0);
+            let default_color = cgmath::Vector3::new(1.0, 0.0, 0.0);
             let default_size = cgmath::Vector3::new(1.0, 1.0, 1.0);
             let default_bounding = default_size + position;
 
@@ -294,8 +289,8 @@ pub fn instances_list_circle(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Inst
             let x = n % chunk_size.x;
             let z = n / chunk_size.y;
 
-            let dx = (x as i32 - center.0 as i32);
-            let dy = (z as i32 - center.1 as i32);
+            let dx = x as i32 - center.0 as i32;
+            let dy = z as i32 - center.1 as i32;
 
             let distance_squared = dx * dx + dy * dy;
             let position = cgmath::Vector3 {
@@ -311,7 +306,7 @@ pub fn instances_list_circle(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Inst
             } else {
                 cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0))
             };
-            let default_color = cgmath::Vector3::new(0.0, 0.0, 0.0);
+            let default_color = cgmath::Vector3::new(1.0, 0.0, 0.0);
             let default_size = cgmath::Vector3::new(1.0, 1.0, 1.0);
             let default_bounding = default_size + position;
 
@@ -363,7 +358,7 @@ pub fn instances_list2() -> Vec<Instance> {
                 cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0))
             };
 
-            let default_color = cgmath::Vector3::new(0.0, 0.0, 0.0);
+            let default_color = cgmath::Vector3::new(1.0, 0.0, 0.0);
             let default_size = cgmath::Vector3::new(1.0, 1.0, 1.0);
             let default_bounding = default_size + position;
 

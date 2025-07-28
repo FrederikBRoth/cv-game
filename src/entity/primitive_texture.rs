@@ -1,6 +1,3 @@
-use anyhow::*;
-use image::GenericImageView;
-
 pub struct PrimitiveTexture {
     #[allow(unused)]
     pub texture: wgpu::Texture,

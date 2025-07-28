@@ -1,26 +1,27 @@
+use std::path::Path;
+use std::sync::Arc;
+
 use crate::entity::entity::Instance;
 use crate::entity::entity::InstanceController;
-use cgmath::{
-    num_traits::{pow, ToPrimitive},
-    Vector3,
-};
+use cgmath::{num_traits::pow, Vector3};
 
-// pub fn ease_in_ease_out_loop(dt: u64, delay: u64, freq: u64) -> f32 {
-//     if dt < delay {
-//         return 0.0;
-//     }
-//     let elapsed = (dt - delay) % (freq * 2);
-//     if elapsed >= freq {
-//         let time = ((freq * 2) - elapsed).to_f32().unwrap() / freq as f32;
-//         let sqr = time * time;
-//         sqr / (2.0 * (sqr - time) + 1.0)
-//     } else {
-//         let time = elapsed.to_f32().unwrap() / freq as f32;
-//         let sqr = time * time;
-//         sqr / (2.0 * (sqr - time) + 1.0)
-//     }
-// }
-
+#[derive(Copy, Clone)]
+pub struct EaseInEaseOutLoop;
+impl EaseInEaseOutLoop {
+    pub fn ease_in_ease_out_loop(dt: f32, delay: f32, freq: f32) -> f32 {
+        if dt < delay {
+            return 0.0;
+        }
+        let elapsed = (dt - delay) % (freq * 2.0);
+        let time = if elapsed >= freq {
+            (2.0 * freq - elapsed) / freq
+        } else {
+            elapsed / freq
+        };
+        let sqr = time * time;
+        sqr / (2.0 * (sqr - time) + 1.0)
+    }
+}
 pub fn ease_in_ease_out_loop(dt: f32, delay: f32, freq: f32) -> f32 {
     if dt < delay {
         return 0.0;
@@ -44,6 +45,16 @@ pub fn get_height_color(height: f32) -> Vector3<f32> {
     low_color + (high_color - low_color) * height
 }
 
+#[derive(Copy, Clone)]
+pub struct EaseOut;
+impl EaseOut {
+    pub fn ease_out_cubic(number: f32) -> f32 {
+        let t = number.clamp(0.0, 1.0);
+        1.0 - (1.0 - t).powi(3)
+    }
+}
+#[derive(Copy, Clone)]
+
 pub struct EaseInEaseOut;
 impl EaseInEaseOut {
     pub fn ease_in_ease_out_cubic(number: f32) -> f32 {
@@ -55,45 +66,93 @@ impl EaseInEaseOut {
         };
     }
 }
-
-enum AnimationTransition {
+#[derive(Copy, Clone)]
+pub enum AnimationTransition {
+    EaseOut(EaseOut),
     EaseInEaseOut(EaseInEaseOut),
+    EaseInEaseOutLoop(EaseInEaseOutLoop),
 }
 
 impl AnimationTransition {
-    pub fn lerp(&self, start: Vector3<f32>, end: Vector3<f32>, number: f32) -> Vector3<f32> {
+    pub fn lerp(
+        &self,
+        start: Vector3<f32>,
+        end: Vector3<f32>,
+        number: f32,
+        delay: f32,
+    ) -> Vector3<f32> {
         match self {
             AnimationTransition::EaseInEaseOut(_) => {
                 let lerp_value = EaseInEaseOut::ease_in_ease_out_cubic(number);
+                start + (end - start) * lerp_value
+            }
+            AnimationTransition::EaseInEaseOutLoop(_) => {
+                let lerp_value = EaseInEaseOutLoop::ease_in_ease_out_loop(number, delay, 1.0) - 0.5;
+                start + (end - start) * lerp_value
+            }
+            AnimationTransition::EaseOut(_) => {
+                let lerp_value = EaseOut::ease_out_cubic(number);
                 start + (end - start) * lerp_value
             }
         }
     }
 }
 
-pub struct Animation {
-    activated: bool,
+//Send og Sync, trådhelvede
+pub enum AnimationType {
+    Persistent(AnimationPersistent),
+    Step(AnimationStep),
+}
+
+#[derive(Clone)]
+pub struct AnimationPersistent {
+    time: f32,
+    movement_vector: Vector3<f32>,
+    animation_transition: AnimationTransition,
+}
+impl AnimationPersistent {
+    pub fn new(movement_vector: Vector3<f32>, animation_transition: AnimationTransition) -> Self {
+        Self {
+            time: 0.0,
+            movement_vector,
+            animation_transition,
+        }
+    }
+}
+#[derive(Clone)]
+pub struct AnimationStep {
+    movement_vector: Vector3<f32>,
     time: f32,
     reversed: bool,
-    start: Vector3<f32>,
-    end: Vector3<f32>,
-    pub current_pos: Vector3<f32>,
+    activated: bool,
+    animating: bool,
     animation_transition: AnimationTransition,
 }
 
-impl Animation {
-    pub fn set_animation(&mut self, start: &Vector3<f32>, end: &Vector3<f32>) {
-        self.start = start.clone();
-        self.end = end.clone();
+impl AnimationStep {
+    /// Constructs a new AnimationStep
+    pub fn new(
+        movement_vector: Vector3<f32>,
+        reversed: bool,
+        activated: bool,
+        animation_transition: AnimationTransition,
+    ) -> Self {
+        Self {
+            movement_vector,
+            time: 0.0,
+            reversed,
+            activated,
+            animating: false,
+            animation_transition,
+        }
     }
-
-    pub fn set_animation_state(&mut self, state: bool) {
-        self.activated = state
-    }
-
-    pub fn reverse(&mut self, state: bool) {
-        self.reversed = state
-    }
+}
+pub struct Animation {
+    activated: bool,
+    start: Vector3<f32>,
+    pub current_pos: Vector3<f32>,
+    persistent_animation: Vec<AnimationPersistent>,
+    animations: Vec<AnimationStep>,
 }
 
 pub struct AnimationHandler {
@@ -102,7 +161,20 @@ pub struct AnimationHandler {
 }
 
 impl AnimationHandler {
-    pub fn new(instance_controller: &InstanceController) -> AnimationHandler {
+    pub fn new(
+        instance_controller: &InstanceController,
+        animations: Vec<AnimationType>,
+    ) -> AnimationHandler {
+        let mut steps = Vec::new();
+        let mut persistents = Vec::new();
+
+        for anim in animations {
+            match anim {
+                AnimationType::Step(step) => steps.push(step),
+                AnimationType::Persistent(persistent) => persistents.push(persistent),
+                // add other variants here as needed
+            }
+        }
         AnimationHandler {
             disabled: false,
             movement_list: {
@@ -110,13 +182,11 @@ impl AnimationHandler {
                     .instances
                     .iter()
                     .map(|instance| Animation {
-                        activated: false,
+                        activated: true,
                         start: instance.position,
-                        end: instance.position,
                         current_pos: instance.position,
-                        time: 0.0,
-                        reversed: false,
-                        animation_transition: AnimationTransition::EaseInEaseOut(EaseInEaseOut),
+                        persistent_animation: persistents.clone(),
+                        animations: steps.clone(),
                     })
                     .collect()
             },
@@ -130,13 +200,18 @@ impl AnimationHandler {
         self.disabled = false;
     }
 
-    pub fn set_animation(&mut self, index: usize, start: &Vector3<f32>, end: &Vector3<f32>) {
+    pub fn set_animation(&mut self, index: usize, animation_type: AnimationType) {
         if self.disabled {
             return;
         }
         if let Some(animation) = self.movement_list.get_mut(index) {
-            if !animation.activated {
-                animation.set_animation(start, end);
+            match animation_type {
+                AnimationType::Persistent(animation_persistent) => {
+                    animation.persistent_animation.push(animation_persistent);
+                }
+                AnimationType::Step(animation_step) => {
+                    animation.animations.push(animation_step);
+                }
             }
         }
     }
@@ -146,54 +221,76 @@ impl AnimationHandler {
             return;
         }
         if let Some(animation) = self.movement_list.get_mut(index) {
-            animation.set_animation_state(state);
-        }
-    }
-
-    pub fn reset_animation_time(&mut self, index: usize) {
-        if self.disabled {
-            return;
-        }
-        if self.disabled {
-            return;
-        }
-        if let Some(animation) = self.movement_list.get_mut(index) {
-            if !animation.activated {
-                animation.time = 0.0;
+            for step in animation.animations.iter_mut() {
+                step.activated = state;
+                if !step.animating {
+                    step.animating = state;
+                }
             }
         }
     }
 
-    pub fn reverse(&mut self, index: usize, state: bool) {
-        if self.disabled {
-            return;
-        }
-        if let Some(animation) = self.movement_list.get_mut(index) {
-            animation.reverse(state);
+    pub fn reverse(&mut self) {
+        for animation in self.movement_list.iter_mut() {
+            for step in animation.animations.iter_mut() {
+                step.reversed = true;
+            }
         }
     }
-
     pub fn animate(&mut self, dt: f32) {
         if self.disabled {
             return;
         }
-        for animation in self.movement_list.iter_mut() {
-            let mut delta = dt;
-            if !animation.activated {
-                continue;
+        for (i, animation) in self.movement_list.iter_mut().enumerate() {
+            let delta = dt;
+
+            let local_x = (i % 35 as usize) as u64;
+            let local_y = (i / 35 as usize) as u64;
+            let delay = (local_x as f32 + local_y as f32) * 0.05;
+            let mut total_movement = animation.start.clone();
+            for persistent in animation.persistent_animation.iter_mut() {
+                persistent.time += delta;
+                total_movement += persistent.animation_transition.lerp(
+                    animation.start,
+                    animation.start + persistent.movement_vector,
+                    persistent.time,
+                    delay,
+                ) - animation.start;
             }
-            if animation.reversed {
-                delta *= -1.0;
+
+            for (i, step) in animation.animations.iter_mut().enumerate() {
+                if !step.activated {
+                    continue;
+                }
+
+                if step.reversed {
+                    step.time -= delta;
+                    step.time = step.time.clamp(0.0, 1.0);
+                    total_movement -= step.animation_transition.lerp(
+                        animation.start + step.movement_vector,
+                        animation.start,
+                        step.time,
+                        0.0,
+                    ) - (animation.start + step.movement_vector);
+                } else {
+                    step.time += delta;
+                    step.time = step.time.clamp(0.0, 1.0);
+                    total_movement += step.animation_transition.lerp(
+                        animation.start,
+                        animation.start + step.movement_vector,
+                        step.time,
+                        0.0,
+                    ) - animation.start;
+                };
+                if step.time == 0.0 || step.time == 1.0 {
+                    step.animating = false
+                }
             }
-            animation.time += delta;
-            animation.time = animation.time.clamp(0.0, 1.0);
-            animation.current_pos =
-                animation
-                    .animation_transition
-                    .lerp(animation.start, animation.end, animation.time);
-            if animation.time == 1.0 || animation.time == 0.0 {
-                animation.activated = false;
-            }
+            animation
+                .animations
+                .retain(|step| !(step.reversed && step.time == 0.0));
+
+            animation.current_pos = total_movement;
         }
     }
 
