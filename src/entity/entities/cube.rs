@@ -1,39 +1,39 @@
-use crate::entity::entity::Vertex;
+use crate::entity::entity::TexturedVertex;
 
-pub struct Cube {
-    pub vertices: Vec<Vertex>,
+pub struct TexturedCube {
+    pub vertices: Vec<TexturedVertex>,
     pub indices: Vec<u16>,
 }
-const VERTICES: &[Vertex] = &[
-    Vertex {
+const VERTICES: &[TexturedVertex] = &[
+    TexturedVertex {
         position: [0.0, 0.0, 1.0],
         tex_coords: [0.0, 0.0],
     }, // A
-    Vertex {
+    TexturedVertex {
         position: [1.0, 0.0, 1.0],
         tex_coords: [0.0, 1.0],
     }, // B
-    Vertex {
+    TexturedVertex {
         position: [0.0, 1.0, 1.0],
         tex_coords: [0.0, 1.0],
     }, // C
-    Vertex {
+    TexturedVertex {
         position: [1.0, 1.0, 1.0],
         tex_coords: [0.0, 0.0],
     }, // D
-    Vertex {
+    TexturedVertex {
         position: [0.0, 0.0, 0.0],
         tex_coords: [1.0, 0.0],
     }, // A
-    Vertex {
+    TexturedVertex {
         position: [1.0, 0.0, 0.0],
         tex_coords: [1.0, 1.0],
     }, // B
-    Vertex {
+    TexturedVertex {
         position: [0.0, 1.0, 0.0],
         tex_coords: [1.0, 1.0],
     }, // C
-    Vertex {
+    TexturedVertex {
         position: [1.0, 1.0, 0.0],
         tex_coords: [1.0, 0.0],
     }, // D
@@ -52,10 +52,59 @@ const INDICES: &[u16] = &[
     //back!
     4, 6, 7, 7, 5, 4,
 ];
-impl Cube {
-    pub fn new() -> Cube {
-        Cube {
+impl TexturedCube {
+    pub fn new() -> TexturedCube {
+        TexturedCube {
             vertices: VERTICES.to_vec(),
+            indices: INDICES.to_vec(),
+        }
+    }
+}
+
+use crate::entity::entity::PrimitiveVertex;
+
+pub struct PrimitiveCube {
+    pub vertices: Vec<PrimitiveVertex>,
+    pub indices: Vec<u16>,
+}
+const PRIMITIVE_VERTICES: &[PrimitiveVertex] = &[
+    PrimitiveVertex {
+        position: [0.0, 0.0, 1.0],
+        color: [1.0, 0.0, 1.0],
+    }, // A
+    PrimitiveVertex {
+        position: [1.0, 0.0, 1.0],
+        color: [1.0, 0.0, 1.0],
+    }, // B
+    PrimitiveVertex {
+        position: [0.0, 1.0, 1.0],
+        color: [1.0, 0.0, 1.0],
+    }, // C
+    PrimitiveVertex {
+        position: [1.0, 1.0, 1.0],
+        color: [1.0, 0.0, 1.0],
+    }, // D
+    PrimitiveVertex {
+        position: [0.0, 0.0, 0.0],
+        color: [1.0, 0.0, 1.0],
+    }, // A
+    PrimitiveVertex {
+        position: [1.0, 0.0, 0.0],
+        color: [1.0, 0.0, 1.0],
+    }, // B
+    PrimitiveVertex {
+        position: [0.0, 1.0, 0.0],
+        color: [1.0, 0.0, 1.0],
+    }, // C
+    PrimitiveVertex {
+        position: [1.0, 1.0, 0.0],
+        color: [1.0, 0.0, 1.0],
+    }, // D
+];
+impl PrimitiveCube {
+    pub fn new() -> PrimitiveCube {
+        PrimitiveCube {
+            vertices: PRIMITIVE_VERTICES.to_vec(),
             indices: INDICES.to_vec(),
         }
     }

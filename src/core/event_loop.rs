@@ -1,13 +1,15 @@
 use super::camera::{Camera, CameraController, CameraUniform};
-use std::iter;
-
-use wgpu::util::DeviceExt;
 use cgmath::prelude::*;
+use instant::Instant;
+use std::{iter, sync::Arc};
+use wgpu::util::DeviceExt;
 use winit::{
+    application::ApplicationHandler,
+    dpi::PhysicalSize,
     event::*,
-    event_loop::EventLoop,
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowBuilder},
+    window::{Window, WindowId},
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -15,102 +17,130 @@ use wasm_bindgen::prelude::*;
 
 use crate::core::state::State;
 
+// #[derive(Default)]
+pub struct App {
+    #[cfg(target_arch = "wasm32")]
+    proxy: Option<winit::event_loop::EventLoopProxy<State>>,
+    state: Option<State>,
+    last_time: instant::Instant,
+}
 
+impl App {
+    pub fn new(#[cfg(target_arch = "wasm32")] event_loop: &EventLoop<State>) -> Self {
+        #[cfg(target_arch = "wasm32")]
+        let proxy = Some(event_loop.create_proxy());
+        Self {
+            state: None,
+            #[cfg(target_arch = "wasm32")]
+            proxy,
+            last_time: instant::Instant::now(),
+        }
+    }
+}
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-pub async fn run() {
-    cfg_if::cfg_if! {
-        if #[cfg(target_arch = "wasm32")] {
-            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Warn).expect("Could't initialize logger");
-        } else {
-            env_logger::init();
+impl ApplicationHandler<State> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        #[allow(unused_mut)]
+        let mut window_attributes = Window::default_attributes();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast;
+            use winit::platform::web::WindowAttributesExtWebSys;
+
+            const CANVAS_ID: &str = "canvas";
+
+            let window = wgpu::web_sys::window().unwrap_throw();
+            let document = window.document().unwrap_throw();
+            let canvas = document.get_element_by_id(CANVAS_ID).unwrap_throw();
+            let html_canvas_element = canvas.unchecked_into();
+            window_attributes = window_attributes.with_canvas(Some(html_canvas_element));
+        }
+
+        // Create window object
+        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(proxy) = self.proxy.take() {
+                wasm_bindgen_futures::spawn_local(async move {
+                    assert!(proxy
+                        .send_event(
+                            State::new(window).await // .expect("Unable to create canvas!!!")
+                        )
+                        .is_ok())
+                });
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let state = pollster::block_on(State::new(window.clone()));
+            self.state = Some(state);
         }
     }
 
-    let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().with_transparent(true).build(&event_loop).unwrap();
+    #[allow(unused_mut)]
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut event: State) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            event.window.request_redraw();
+            event.resize(event.window.inner_size());
+        }
+        self.state = Some(event);
+    }
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let state = match &mut self.state {
+            Some(canvas) => canvas,
+            None => return,
+        };
+        state.input(&event);
+        // println!("{event:?}");
+        match event {
+            WindowEvent::CloseRequested => {
+                println!("The close button was pressed; stopping");
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => {
+                let dt = self.last_time.elapsed();
+                self.last_time = instant::Instant::now();
+                state.update(dt);
+                state.render().unwrap();
+            }
+            WindowEvent::Resized(size) => {
+                // Reconfigures the size of the surface. We do not re-render
+                // here as this event is always followed up by redraw request.
+                state.resize(size);
+            }
+            _ => (),
+        }
+    }
+}
 
+pub fn run() -> anyhow::Result<()> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        env_logger::init();
+    }
     #[cfg(target_arch = "wasm32")]
     {
-        // Winit prevents sizing with CSS, so we have to set
-        // the size manually when on web.
-
-        use winit::platform::web::WindowExtWebSys;
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| {
-                let dst = doc.get_element_by_id("wasm-example")?;
-                let canvas = web_sys::Element::from(window.canvas()?);
-                canvas.set_class_name("w-full h-full");
-                dst.append_child(&canvas).ok()?;
-                Some(())
-            })
-            .expect("Couldn't append canvas to document body.");
+        console_log::init_with_level(log::Level::Info).unwrap_throw();
     }
 
-    // State::new uses async code, so we're going to wait for it to finish
-    let mut state = State::new(&window).await;
-    let mut surface_configured = false;
+    let event_loop = EventLoop::with_user_event().build()?;
+    let mut app = App::new(
+        #[cfg(target_arch = "wasm32")]
+        &event_loop,
+    );
+    event_loop.run_app(&mut app)?;
 
-    event_loop
-        .run(move |event, control_flow| {
-            match event {
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == state.window().id() => {
-                    if !state.input(event) {
-                        match event {
-                            WindowEvent::CloseRequested
-                            | WindowEvent::KeyboardInput {
-                                event:
-                                    KeyEvent {
-                                        state: ElementState::Pressed,
-                                        physical_key: PhysicalKey::Code(KeyCode::Escape),
-                                        ..
-                                    },
-                                ..
-                            } => control_flow.exit(),
-                            WindowEvent::Resized(physical_size) => {
-                                if(!surface_configured) {
-                                    state.resize(*physical_size);
-                                }
-                                surface_configured = true;
-                            }
-                            WindowEvent::RedrawRequested => {
-                                // This tells winit that we want another frame after this one
-                                state.window().request_redraw();
+    Ok(())
+}
 
-                                if !surface_configured {
-                                    return;
-                                }
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(start)]
+pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {
+    console_error_panic_hook::set_once();
+    run().unwrap_throw();
 
-                                state.update();
-                                match state.render() {
-                                    Ok(_) => {}
-                                    // Reconfigure the surface if it's lost or outdated
-                                    Err(
-                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
-                                    ) => state.resize(state.size),
-                                    // The system is out of memory, we should probably quit
-                                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                                        log::error!("OutOfMemory");
-                                        control_flow.exit();
-                                    }
-
-                                    // This happens when the a frame takes too long to present
-                                    Err(wgpu::SurfaceError::Timeout) => {
-                                        log::warn!("Surface timeout")
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        })
-        .unwrap();
+    Ok(())
 }

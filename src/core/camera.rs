@@ -1,4 +1,5 @@
-use cgmath::{InnerSpace, SquareMatrix};
+use cgmath::{EuclideanSpace, InnerSpace, Point3, SquareMatrix, Transform, Vector3, Vector4};
+use log::warn;
 use winit::{
     event::{ElementState, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
@@ -19,8 +20,57 @@ pub struct Camera {
 impl Camera {
     fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
         let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
+        let ortho = cgmath::ortho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
         proj * view
+    }
+    pub fn screen_to_world_ray(
+        &self,
+        mouse_x: f32,
+        mouse_y: f32,
+        screen_width: f32,
+        screen_height: f32,
+    ) -> (Point3<f32>, Vector3<f32>) {
+        // Convert screen coords to normalized device coordinates (NDC)
+        let front = self
+            .project_screen_to_world(mouse_x, mouse_y, 1.0, screen_width, screen_height)
+            .unwrap();
+        let back = self
+            .project_screen_to_world(mouse_x, mouse_y, 0.0, screen_width, screen_height)
+            .unwrap();
+
+        (Point3::from_vec(back), (front - back).normalize())
+    }
+
+    pub fn project_screen_to_world(
+        &self,
+        mouse_x: f32,
+        mouse_y: f32,
+        mouse_z: f32,
+        screen_width: f32,
+        screen_height: f32,
+    ) -> Option<Vector3<f32>> {
+        let view_projection = OPENGL_TO_WGPU_MATRIX * self.build_view_projection_matrix();
+        if let Some(inv_view_projection) = view_projection.invert() {
+            let world = Vector4::new(
+                (mouse_x) / (screen_width as f32) * 2.0 - 1.0,
+                // Screen Origin is Top Left    (Mouse Origin is Top Left)
+                //          (screen.y - (viewport.y as f32)) / (viewport.w as f32) * 2.0 - 1.0,
+                // Screen Origin is Bottom Left (Mouse Origin is Top Left)
+                (1.0 - (mouse_y) / (screen_height as f32)) * 2.0 - 1.0,
+                mouse_z * 2.0 - 1.0,
+                1.0,
+            );
+            let world = inv_view_projection * world;
+
+            if world.w != 0.0 {
+                Some(world.truncate() * (1.0 / world.w))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 }
 
@@ -93,6 +143,7 @@ impl CameraController {
                     }
                     KeyCode::KeyA | KeyCode::ArrowLeft => {
                         self.is_left_pressed = is_pressed;
+
                         true
                     }
                     KeyCode::KeyS | KeyCode::ArrowDown => {
@@ -106,6 +157,7 @@ impl CameraController {
                     _ => false,
                 }
             }
+
             _ => false,
         }
     }
