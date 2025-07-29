@@ -1,6 +1,3 @@
-use std::path::Path;
-use std::sync::Arc;
-
 use crate::entity::entity::Instance;
 use crate::entity::entity::InstanceController;
 use cgmath::{num_traits::pow, Vector3};
@@ -241,12 +238,20 @@ impl AnimationHandler {
         if self.disabled {
             return;
         }
-        for (i, animation) in self.movement_list.iter_mut().enumerate() {
+        for (i, animation) in self
+            .movement_list
+            .iter_mut()
+            .filter(|ani| ani.activated)
+            .enumerate()
+        {
             let delta = dt;
 
-            let local_x = (i % 35 as usize) as u64;
-            let local_y = (i / 35 as usize) as u64;
-            let delay = (local_x as f32 + local_y as f32) * 0.05;
+            let chunk_size: Vector3<usize> = Vector3::new(25, 1, 25);
+            let local_x = (i % chunk_size.x) as u64;
+            let local_z = ((i / chunk_size.x) % chunk_size.z) as u64;
+            let local_y = (i / (chunk_size.x * chunk_size.z)) as u64;
+
+            let delay = ((local_x as f32 + local_z as f32) * 0.05) as f32;
             let mut total_movement = animation.start.clone();
             for persistent in animation.persistent_animation.iter_mut() {
                 persistent.time += delta;

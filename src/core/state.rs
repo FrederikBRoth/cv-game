@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
 
-use cgmath::Vector2;
+use cgmath::{Vector2, Vector3};
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
 use winit::event::WindowEvent;
@@ -10,8 +10,8 @@ use winit::window::Window;
 
 use crate::core::game_loop::Chunk;
 use crate::entity::entity::{
-    instances_list, instances_list_circle, make_cube_primitive, make_cube_textured,
-    InstanceController, Mesh,
+    instances_list, instances_list_circle, instances_list_cube, instances_list_cylinder,
+    make_cube_primitive, make_cube_textured, InstanceController, Mesh,
 };
 use crate::entity::primitive_texture::PrimitiveTexture;
 use crate::entity::texture::Texture;
@@ -192,6 +192,8 @@ impl State {
         // Create instance controller and game loop
 
         let chunk_size = Vector2::new(35, 35);
+        let chunk_size_cube = Vector3::new(25, 1, 25);
+
         let mut chunk_map: HashMap<Chunk, InstanceController> = HashMap::new();
         let mesh = make_cube_primitive();
         match mesh {
@@ -209,6 +211,7 @@ impl State {
                         );
                         let instance_controller = InstanceController::new(
                             instances_list_circle(origin, chunk_size),
+                            // instances_list_cube(origin, chunk_size_cube),
                             0,
                             mb,
                             renderer,
@@ -219,8 +222,8 @@ impl State {
                 }
             }
             Mesh::Textured(_) => {
-                for n in 0..3 {
-                    for y in 0..3 {
+                for n in 0..1 {
+                    for y in 0..1 {
                         let origin = Chunk { x: n, y: y };
                         let mesh = make_cube_textured();
                         let (mb, renderer) = mesh.get_mesh_buffer(
@@ -249,7 +252,7 @@ impl State {
             PhysicalPosition::new(0.0, 0.0),
             Arc::clone(&device),
             Arc::clone(&queue),
-            chunk_size,
+            chunk_size_cube,
             chunk_map,
         );
         log::warn!("Done");

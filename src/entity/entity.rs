@@ -280,6 +280,42 @@ pub fn instances_list(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Instance> {
         })
         .collect::<Vec<_>>()
 }
+pub fn instances_list_cube(chunk: Chunk, chunk_size: Vector3<u32>) -> Vec<Instance> {
+    (0..(chunk_size.x * chunk_size.y * chunk_size.z))
+        .map(move |n| {
+            let x = n % chunk_size.x;
+            let z = (n / chunk_size.x) % chunk_size.z;
+            let y = n / (chunk_size.x * chunk_size.z);
+
+            let position = cgmath::Vector3 {
+                x: x as f32 + (chunk.x * chunk_size.x as i32) as f32,
+                y: 0.0 as f32,
+                z: z as f32 + (chunk.y * chunk_size.z as i32) as f32,
+            };
+
+            let rotation = if position.is_zero() {
+                // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                // as Quaternions can effect scale if they're not created correctly
+                cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+            } else {
+                cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0))
+            };
+            let default_color = cgmath::Vector3::new(1.0, 0.0, 0.0);
+            let default_size = cgmath::Vector3::new(1.0, 1.0, 1.0);
+            let default_bounding = default_size + position;
+
+            Instance {
+                position,
+                rotation,
+                scale: 0.5,
+                should_render: true,
+                color: default_color,
+                size: default_size,
+                bounding: default_bounding,
+            }
+        })
+        .collect::<Vec<_>>()
+}
 
 pub fn instances_list_circle(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Instance> {
     let center = (chunk_size.x / 2, chunk_size.y / 2);
@@ -297,6 +333,65 @@ pub fn instances_list_circle(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Inst
                 x: x as f32 + (chunk.x * chunk_size.x as i32) as f32,
                 y: 0.0,
                 z: z as f32 + (chunk.y * chunk_size.y as i32) as f32,
+            };
+
+            let rotation = if position.is_zero() {
+                // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                // as Quaternions can effect scale if they're not created correctly
+                cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+            } else {
+                cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0))
+            };
+            let default_color = cgmath::Vector3::new(1.0, 0.0, 0.0);
+            let default_size = cgmath::Vector3::new(1.0, 1.0, 1.0);
+            let default_bounding = default_size + position;
+
+            if distance_squared > radius * radius
+                || x == 0
+                || x == radius as u32
+                || z == 0
+                || z == radius as u32
+            {
+                Instance {
+                    position,
+                    rotation,
+                    scale: 0.5,
+                    should_render: false,
+                    color: default_color,
+                    size: default_size,
+                    bounding: default_bounding,
+                }
+            } else {
+                Instance {
+                    position,
+                    rotation,
+                    scale: 0.5,
+                    should_render: true,
+                    color: default_color,
+                    size: default_size,
+                    bounding: default_bounding,
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+}
+pub fn instances_list_cylinder(chunk: Chunk, chunk_size: Vector3<u32>) -> Vec<Instance> {
+    let center = (chunk_size.x / 2, chunk_size.z / 2);
+    let radius = center.0 as i32;
+    (0..(chunk_size.x * chunk_size.y * chunk_size.z))
+        .map(move |n| {
+            let x = n % chunk_size.x;
+            let z = (n / chunk_size.x) % chunk_size.z;
+            let y = n / (chunk_size.x * chunk_size.z);
+
+            let dx = x as i32 - center.0 as i32;
+            let dy = z as i32 - center.1 as i32;
+
+            let distance_squared = dx * dx + dy * dy;
+            let position = cgmath::Vector3 {
+                x: x as f32 + (chunk.x * chunk_size.x as i32) as f32,
+                y: y as f32,
+                z: z as f32 + (chunk.y * chunk_size.z as i32) as f32,
             };
 
             let rotation = if position.is_zero() {
@@ -712,4 +807,8 @@ pub fn make_cube_primitive() -> Mesh {
     };
 
     Mesh::Primitive(polygon)
+}
+
+fn align_to(value: u64, alignment: u64) -> u64 {
+    (value + alignment - 1) / alignment * alignment
 }

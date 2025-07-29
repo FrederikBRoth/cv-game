@@ -30,69 +30,6 @@ pub fn line_trace_cursor(
     }
 }
 
-pub fn line_trace_remove(
-    state: &mut InstanceController,
-    queue: &wgpu::Queue,
-    click_vector: (Point3<f32>, Vector3<f32>),
-) {
-    let origin = click_vector.0;
-    let direction = click_vector.1.normalize();
-
-    let mut closest_hit_index: Option<usize> = None;
-    let mut closest_distance = f32::MAX;
-
-    for (i, instance) in state.instances.iter().enumerate() {
-        if !instance.should_render {
-            continue;
-        }
-
-        let center = instance.position + instance.size * 0.5;
-        let half_size = instance.size * 0.5;
-
-        if let Some(distance) = ray_aabb_intersect(origin, direction, center, half_size) {
-            if distance < closest_distance {
-                closest_distance = distance;
-                closest_hit_index = Some(i);
-            }
-        }
-    }
-
-    if let Some(i) = closest_hit_index {
-        println!("{:?}", closest_distance);
-        state.instances[i].should_render = false;
-        state.update_buffer(queue);
-    }
-}
-
-pub fn line_trace(
-    state: &mut InstanceController,
-    click_vector: (Point3<f32>, Vector3<f32>),
-) -> Option<usize> {
-    let origin = click_vector.0;
-    let direction = click_vector.1.normalize();
-
-    let mut closest_hit_index: Option<usize> = None;
-    let mut closest_distance = f32::MAX;
-
-    for (i, instance) in state.instances.iter().enumerate() {
-        if !instance.should_render {
-            continue;
-        }
-
-        let center = instance.position + instance.size * 0.5;
-        let half_size = instance.size * 0.5;
-
-        if let Some(distance) = ray_aabb_intersect(origin, direction, center, half_size) {
-            if distance < closest_distance {
-                closest_distance = distance;
-                closest_hit_index = Some(i);
-            }
-        }
-    }
-
-    closest_hit_index
-}
-
 // pub fn line_trace_animate_hit(
 //     state: &mut InstanceController,
 //     animation_handler: &mut AnimationHandler,
@@ -186,13 +123,42 @@ fn aabb_intersect(
         && point.z >= bounding_min.z
         && point.z <= bounding_max.z;
 }
+pub fn line_trace(
+    state: &mut InstanceController,
+    click_vector: (Point3<f32>, Vector3<f32>),
+) -> Option<usize> {
+    let origin = click_vector.0;
+    let direction = click_vector.1.normalize();
 
+    let mut closest_hit_index: Option<usize> = None;
+    let mut closest_distance = f32::MAX;
+
+    for (i, instance) in state
+        .instances
+        .iter()
+        .filter(|inst| inst.should_render)
+        .enumerate()
+    {
+        let center = instance.position + instance.size * 0.5;
+        let half_size = instance.size * 0.5;
+
+        if let Some(distance) = ray_aabb_intersect(origin, direction, center, half_size) {
+            if distance < closest_distance {
+                closest_distance = distance;
+                closest_hit_index = Some(i);
+            }
+        }
+    }
+
+    closest_hit_index
+}
 pub fn ray_aabb_intersect(
     origin: Point3<f32>,
     direction: Vector3<f32>,
     aabb_center: Vector3<f32>,
     aabb_half_size: Vector3<f32>,
 ) -> Option<f32> {
+    let inv_dir = Vector3::new(direction.x, direction.y, direction.z);
     let inv_dir = Vector3::new(1.0 / direction.x, 1.0 / direction.y, 1.0 / direction.z);
 
     let min = aabb_center - aabb_half_size;

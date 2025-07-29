@@ -16,9 +16,7 @@ use crate::{
             AnimationStep, AnimationTransition, AnimationType, EaseInEaseOut, EaseInEaseOutLoop,
             EaseOut,
         },
-        line_trace::{
-            aabb_sphere_intersect, line_trace, line_trace_animate_hit, line_trace_remove,
-        },
+        line_trace::{aabb_sphere_intersect, line_trace, line_trace_animate_hit},
     },
 };
 
@@ -35,7 +33,7 @@ pub struct Gameloop {
     pub queue: Arc<wgpu::Queue>,
     pub chunk_map: HashMap<Chunk, InstanceController>,
     pub elapsed_time: f32,
-    pub chunk_size: Vector2<u32>,
+    pub chunk_size: Vector3<u32>,
     pub animation_handler: AnimationHandler,
 }
 
@@ -47,9 +45,12 @@ impl Gameloop {
 
             for (i, instance) in instance_controller.instances.iter_mut().enumerate() {
                 let local_x = (i % self.chunk_size.x as usize) as u64;
-                let local_y = (i / self.chunk_size.y as usize) as u64;
-                let delay = ((chunk.x as f32 + chunk.y as f32) * 5.0)
-                    + ((local_x as f32 + local_y as f32) * 0.05);
+                let local_z =
+                    ((i / self.chunk_size.x as usize) % self.chunk_size.z as usize) as u64;
+                let local_y =
+                    (i / (self.chunk_size.x as usize * self.chunk_size.z as usize)) as u64;
+
+                let delay = ((local_x as f32 + local_z as f32) * 0.05) as f32;
                 // Diagonal wave offset for this tile
                 let lerp = 1.0 * ease_in_ease_out_loop(self.elapsed_time, delay as f32, 1.0);
                 // if i == 1 {
@@ -131,23 +132,27 @@ impl Gameloop {
                                     //     &self.queue,
                                     //     test,
                                     // );
-                                    let animation = AnimationType::Step(AnimationStep::new(
-                                        Vector3 {
-                                            x: 0.0,
-                                            y: 1.0,
-                                            z: 0.0,
-                                        },
-                                        false,
-                                        false,
-                                        AnimationTransition::EaseInEaseOut(EaseInEaseOut),
-                                    ));
-                                    line_trace_animate_hit(
-                                        controller,
-                                        &mut self.animation_handler,
-                                        &self.queue,
-                                        animation,
-                                        test,
-                                    )
+                                    // let animation = AnimationType::Step(AnimationStep::new(
+                                    //     Vector3 {
+                                    //         x: 0.0,
+                                    //         y: 1.0,
+                                    //         z: 0.0,
+                                    //     },
+                                    //     false,
+                                    //     false,
+                                    //     AnimationTransition::EaseInEaseOut(EaseInEaseOut),
+                                    // ));
+                                    // line_trace_animate_hit(
+                                    //     controller,
+                                    //     &mut self.animation_handler,
+                                    //     &self.queue,
+                                    //     animation,
+                                    //     test,
+                                    // )
+                                    let i = line_trace(controller, test).unwrap();
+                                    if let Some(instance) = controller.instances.get_mut(i) {
+                                        instance.should_render = false;
+                                    }
                                 }
 
                                 log::warn!("CLickedm ouse!");
@@ -195,7 +200,11 @@ impl Gameloop {
                                     let sphere_radius = 5.0;
                                     let sphere_center =
                                         controller.instances.get(index).unwrap().position;
-                                    for (i, instance) in controller.instances.iter_mut().enumerate()
+                                    for (i, instance) in controller
+                                        .instances
+                                        .iter_mut()
+                                        // .filter(|inst| inst.should_render)
+                                        .enumerate()
                                     {
                                         if aabb_sphere_intersect(
                                             instance.position,
@@ -259,25 +268,10 @@ impl Gameloop {
                 let target_chunk = Chunk { x: 0, y: 0 };
 
                 if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
-                    // line_trace_cursor(
-                    //     controller,
-                    //     &self.chunk_size,
-                    //     &self.queue,
-                    //     test,
-                    // );
-                    let animation = AnimationType::Step(AnimationStep::new(
-                        Vector3 {
-                            x: 0.0,
-                            y: 1.0,
-                            z: 0.0,
-                        },
-                        true,
-                        false,
-                        AnimationTransition::EaseInEaseOut(EaseInEaseOut),
-                    ));
-                    // line_trace_remove(controller, &self.queue, test)
+                    let test = line_trace(controller, test);
+
+                    println!("{:?}", test)
                 }
-                // println!("{:?}", position)
             }
             _ => {}
         }
@@ -287,7 +281,7 @@ impl Gameloop {
         cursor_position: PhysicalPosition<f32>,
         device: Arc<wgpu::Device>,
         queue: Arc<wgpu::Queue>,
-        chunk_size: Vector2<u32>,
+        chunk_size: Vector3<u32>,
         chunk_map: HashMap<Chunk, InstanceController>,
     ) -> Self {
         // Create a merged AnimationHandler based on all instances in chunk_map
