@@ -289,7 +289,7 @@ pub fn instances_list_cube(chunk: Chunk, chunk_size: Vector3<u32>) -> Vec<Instan
 
             let position = cgmath::Vector3 {
                 x: x as f32 + (chunk.x * chunk_size.x as i32) as f32,
-                y: 0.0 as f32,
+                y: y as f32,
                 z: z as f32 + (chunk.y * chunk_size.z as i32) as f32,
             };
 

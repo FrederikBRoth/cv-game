@@ -133,12 +133,10 @@ pub fn line_trace(
     let mut closest_hit_index: Option<usize> = None;
     let mut closest_distance = f32::MAX;
 
-    for (i, instance) in state
-        .instances
-        .iter()
-        .filter(|inst| inst.should_render)
-        .enumerate()
-    {
+    for (i, instance) in state.instances.iter().enumerate() {
+        if (!instance.should_render) {
+            continue;
+        }
         let center = instance.position + instance.size * 0.5;
         let half_size = instance.size * 0.5;
 

@@ -246,7 +246,7 @@ impl AnimationHandler {
         {
             let delta = dt;
 
-            let chunk_size: Vector3<usize> = Vector3::new(25, 1, 25);
+            let chunk_size: Vector3<usize> = Vector3::new(25, 10, 25);
             let local_x = (i % chunk_size.x) as u64;
             let local_z = ((i / chunk_size.x) % chunk_size.z) as u64;
             let local_y = (i / (chunk_size.x * chunk_size.z)) as u64;

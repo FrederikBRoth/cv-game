@@ -192,7 +192,7 @@ impl State {
         // Create instance controller and game loop
 
         let chunk_size = Vector2::new(35, 35);
-        let chunk_size_cube = Vector3::new(25, 1, 25);
+        let chunk_size_cube = Vector3::new(25, 10, 25);
 
         let mut chunk_map: HashMap<Chunk, InstanceController> = HashMap::new();
         let mesh = make_cube_primitive();
@@ -210,8 +210,8 @@ impl State {
                             camera_bind_group_layout.clone(),
                         );
                         let instance_controller = InstanceController::new(
-                            instances_list_circle(origin, chunk_size),
-                            // instances_list_cube(origin, chunk_size_cube),
+                            // instances_list_circle(origin, chunk_size),
+                            instances_list_cube(origin, chunk_size_cube),
                             0,
                             mb,
                             renderer,

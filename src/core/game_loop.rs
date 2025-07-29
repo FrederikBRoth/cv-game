@@ -149,9 +149,10 @@ impl Gameloop {
                                     //     animation,
                                     //     test,
                                     // )
-                                    let i = line_trace(controller, test).unwrap();
-                                    if let Some(instance) = controller.instances.get_mut(i) {
-                                        instance.should_render = false;
+                                    if let Some(i) = line_trace(controller, test) {
+                                        if let Some(instance) = controller.instances.get_mut(i) {
+                                            instance.should_render = false;
+                                        }
                                     }
                                 }
 
