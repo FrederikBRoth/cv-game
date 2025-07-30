@@ -128,6 +128,7 @@ pub fn line_trace(
     click_vector: (Point3<f32>, Vector3<f32>),
 ) -> Option<usize> {
     let origin = click_vector.0;
+    //Notice negation of vector
     let direction = click_vector.1.normalize();
 
     let mut closest_hit_index: Option<usize> = None;
@@ -137,10 +138,12 @@ pub fn line_trace(
         if (!instance.should_render) {
             continue;
         }
-        let center = instance.position + instance.size * 0.5;
-        let half_size = instance.size * 0.5;
+        let max = instance.position + instance.size;
+        let min = instance.position;
 
-        if let Some(distance) = ray_aabb_intersect(origin, direction, center, half_size) {
+        if let Some(distance) = ray_aabb_intersect(origin, direction, min, max) {
+            // println!("{:?}", i);
+
             if distance < closest_distance {
                 closest_distance = distance;
                 closest_hit_index = Some(i);
@@ -152,57 +155,45 @@ pub fn line_trace(
 }
 pub fn ray_aabb_intersect(
     origin: Point3<f32>,
-    direction: Vector3<f32>,
-    aabb_center: Vector3<f32>,
-    aabb_half_size: Vector3<f32>,
+    dir: Vector3<f32>,
+    min: Vector3<f32>,
+    max: Vector3<f32>,
 ) -> Option<f32> {
-    let inv_dir = Vector3::new(direction.x, direction.y, direction.z);
-    let inv_dir = Vector3::new(1.0 / direction.x, 1.0 / direction.y, 1.0 / direction.z);
+    let mut tmin = f32::NEG_INFINITY;
+    let mut tmax = f32::INFINITY;
 
-    let min = aabb_center - aabb_half_size;
-    let max = aabb_center + aabb_half_size;
+    for i in 0..3 {
+        let o = origin[i];
+        let d = dir[i];
 
-    let mut tmin = (min.x - origin.x) * inv_dir.x;
-    let mut tmax = (max.x - origin.x) * inv_dir.x;
+        if d.abs() < 1e-6 {
+            // Ray is parallel to slab
+            if o < min[i] || o > max[i] {
+                return None;
+            }
+        } else {
+            let inv_d = 1.0 / d;
+            let mut t1 = (min[i] - o) * inv_d;
+            let mut t2 = (max[i] - o) * inv_d;
 
-    if tmin > tmax {
-        std::mem::swap(&mut tmin, &mut tmax);
+            if t1 > t2 {
+                std::mem::swap(&mut t1, &mut t2);
+            }
+
+            tmin = tmin.max(t1);
+            tmax = tmax.min(t2);
+
+            if tmin > tmax {
+                return None;
+            }
+        }
     }
 
-    let mut tymin = (min.y - origin.y) * inv_dir.y;
-    let mut tymax = (max.y - origin.y) * inv_dir.y;
-
-    if tymin > tymax {
-        std::mem::swap(&mut tymin, &mut tymax);
+    if tmax < 0.0 {
+        return None; // Intersection behind ray origin
     }
 
-    if (tmin > tymax) || (tymin > tmax) {
-        return None;
-    }
-
-    if tymin > tmin {
-        tmin = tymin;
-    }
-    if tymax < tmax {
-        tmax = tymax;
-    }
-
-    let mut tzmin = (min.z - origin.z) * inv_dir.z;
-    let mut tzmax = (max.z - origin.z) * inv_dir.z;
-
-    if tzmin > tzmax {
-        std::mem::swap(&mut tzmin, &mut tzmax);
-    }
-
-    if (tmin > tzmax) || (tzmin > tmax) {
-        return None;
-    }
-
-    if tzmin > tmin {
-        tmin = tzmin;
-    }
-
-    Some(tmin.max(0.0)) // return positive intersection distance
+    Some(if tmin >= 0.0 { tmin } else { tmax }) // Return positive distance
 }
 
 pub fn aabb_sphere_intersect(

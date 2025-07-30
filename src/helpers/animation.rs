@@ -1,5 +1,6 @@
 use crate::entity::entity::Instance;
 use crate::entity::entity::InstanceController;
+use cgmath::num_traits::float;
 use cgmath::{num_traits::pow, Vector3};
 
 #[derive(Copy, Clone)]
@@ -144,12 +145,18 @@ impl AnimationStep {
         }
     }
 }
+#[derive(Clone)]
+
 pub struct Animation {
     activated: bool,
-    start: Vector3<f32>,
+    time: f32,
+    pub start: Vector3<f32>,
     pub current_pos: Vector3<f32>,
     persistent_animation: Vec<AnimationPersistent>,
+    persistent_delta: Vector3<f32>,
+
     animations: Vec<AnimationStep>,
+    color: Vector3<f32>,
 }
 
 pub struct AnimationHandler {
@@ -174,16 +181,28 @@ impl AnimationHandler {
         }
         AnimationHandler {
             disabled: false,
+
             movement_list: {
                 instance_controller
                     .instances
                     .iter()
                     .map(|instance| Animation {
+                        persistent_delta: Vector3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
                         activated: true,
                         start: instance.position,
                         current_pos: instance.position,
                         persistent_animation: persistents.clone(),
                         animations: steps.clone(),
+                        color: Vector3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        time: 0.0,
                     })
                     .collect()
             },
@@ -234,6 +253,41 @@ impl AnimationHandler {
             }
         }
     }
+
+    pub fn reset_instance_position_to_current_position(&mut self, instances: &mut Vec<Instance>) {
+        for (i, animation) in self.movement_list.iter_mut().enumerate() {
+            if let Some(instance) = instances.get_mut(i) {
+                if animation.animations.is_empty() {
+                    continue;
+                }
+                let mut total_movement = animation.start.clone();
+                for step in animation.animations.iter_mut() {
+                    if step.reversed {
+                        total_movement -= step.animation_transition.lerp(
+                            animation.start + step.movement_vector,
+                            animation.start,
+                            step.time,
+                            0.0,
+                        ) - (animation.start + step.movement_vector);
+                    } else {
+                        step.time = step.time.clamp(0.0, 1.0);
+                        total_movement += step.animation_transition.lerp(
+                            animation.start,
+                            animation.start + step.movement_vector,
+                            step.time,
+                            0.0,
+                        ) - animation.start;
+                    };
+                }
+                instance.position = total_movement;
+                instance.bounding = instance.size + total_movement;
+                animation.start = instance.position;
+            } else {
+                continue;
+            };
+            animation.animations.clear();
+        }
+    }
     pub fn animate(&mut self, dt: f32) {
         if self.disabled {
             return;
@@ -246,12 +300,9 @@ impl AnimationHandler {
         {
             let delta = dt;
 
-            let chunk_size: Vector3<usize> = Vector3::new(25, 10, 25);
-            let local_x = (i % chunk_size.x) as u64;
-            let local_z = ((i / chunk_size.x) % chunk_size.z) as u64;
-            let local_y = (i / (chunk_size.x * chunk_size.z)) as u64;
+            animation.time += dt;
 
-            let delay = ((local_x as f32 + local_z as f32) * 0.05) as f32;
+            let delay = ((animation.current_pos.x + animation.current_pos.z) * 0.05);
             let mut total_movement = animation.start.clone();
             for persistent in animation.persistent_animation.iter_mut() {
                 persistent.time += delta;
@@ -262,7 +313,9 @@ impl AnimationHandler {
                     delay,
                 ) - animation.start;
             }
-
+            animation.persistent_delta = total_movement.clone() - animation.start;
+            let lerp = 1.0 * ease_in_ease_out_loop(animation.time, delay as f32, 1.0);
+            animation.color = get_height_color(lerp);
             for (i, step) in animation.animations.iter_mut().enumerate() {
                 if !step.activated {
                     continue;
@@ -306,6 +359,7 @@ impl AnimationHandler {
             }
             instance.position = animation.current_pos;
             instance.bounding = instance.size + animation.current_pos;
+            instance.color = animation.color;
         }
     }
 }

@@ -1,3 +1,8 @@
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+};
+
 use crate::{
     core::game_loop::Chunk,
     entity::{
@@ -88,6 +93,7 @@ pub struct InstanceController {
     pub render: Renderer,
     capacity: usize,
     pub count: usize,
+    pub atomic_usize: Arc<AtomicUsize>,
 }
 
 impl InstanceController {
@@ -98,19 +104,21 @@ impl InstanceController {
         render: Renderer,
         device: &wgpu::Device,
     ) -> InstanceController {
+        let len = instances
+            .clone()
+            .iter()
+            .filter(|instance| instance.should_render)
+            .map(Instance::to_raw)
+            .collect::<Vec<_>>()
+            .len();
         InstanceController {
             buffer_address,
             instances: instances.clone(),
             entity_buffers,
             render,
             capacity: instances.len(),
-            count: instances
-                .clone()
-                .iter()
-                .filter(|instance| instance.should_render)
-                .map(Instance::to_raw)
-                .collect::<Vec<_>>()
-                .len(),
+            atomic_usize: Arc::new(AtomicUsize::new(len)),
+            count: len,
             instance_buffer: {
                 let instance_data = instances
                     .clone()
@@ -171,14 +179,15 @@ impl InstanceController {
     pub fn remove_instance(&mut self, index: usize, queue: &wgpu::Queue) {
         if let Some(instance) = self.instances.get_mut(index) {
             instance.should_render = false;
+            self.count -= 1;
         }
-        let data = self.to_raw();
-        self.count = data.len();
-        queue.write_buffer(
-            &self.instance_buffer,
-            self.buffer_address,
-            bytemuck::cast_slice(&data),
-        );
+        // let data = self.to_raw();
+        // self.count = data.len();
+        // queue.write_buffer(
+        //     &self.instance_buffer,
+        //     self.buffer_address,
+        //     bytemuck::cast_slice(&data),
+        // );
     }
 
     pub fn remove_instance_at_pos(
@@ -209,9 +218,48 @@ impl InstanceController {
         true
     }
 
+    pub fn update_buffer_multithreaded(&mut self, queue: Arc<wgpu::Queue>) {
+        let instances = self.instances.clone();
+        let instance_buffer = self.instance_buffer.clone(); // If clonable
+        let count_clone = Arc::clone(&self.atomic_usize);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use std::sync::atomic::Ordering;
+
+            let queue = Arc::clone(&queue);
+            std::thread::spawn(move || {
+                use std::sync::atomic::Ordering;
+
+                let data = instances
+                    .iter()
+                    .filter(|instance| instance.should_render)
+                    .map(Instance::to_raw)
+                    .collect::<Vec<InstanceRaw>>();
+                queue.write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&data));
+                count_clone.store(data.len(), Ordering::Relaxed);
+            });
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen_futures::spawn_local;
+
+            let queue = queue.clone(); // or Arc
+            spawn_local(async move {
+                let data = instances
+                    .iter()
+                    .filter(|instance| instance.should_render)
+                    .map(Instance::to_raw)
+                    .collect::<Vec<InstanceRaw>>();
+                queue.write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&data));
+                count_clone.store(data.len(), Ordering::Relaxed);
+            });
+        }
+    }
+
     pub fn update_buffer(&mut self, queue: &wgpu::Queue) {
         let data = self.to_raw();
-        self.count = data.len();
+        self.atomic_usize.store(data.len(), Ordering::Relaxed);
         queue.write_buffer(
             &self.instance_buffer,
             self.buffer_address,
@@ -232,7 +280,7 @@ impl InstanceController {
         render_pass.draw_indexed(
             0..polygon.num_indices,
             0,
-            0..(*(&self.count.clone()) as usize) as _,
+            0..(*(&self.atomic_usize.load(Ordering::Relaxed).clone()) as usize) as _,
         );
     }
 

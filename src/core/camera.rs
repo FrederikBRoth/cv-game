@@ -38,7 +38,7 @@ impl Camera {
             .project_screen_to_world(mouse_x, mouse_y, 0.0, screen_width, screen_height)
             .unwrap();
 
-        (Point3::from_vec(back), (front - back).normalize())
+        (Point3::from_vec(back), -(front - back).normalize())
     }
 
     pub fn project_screen_to_world(

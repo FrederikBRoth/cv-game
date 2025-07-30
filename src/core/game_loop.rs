@@ -17,6 +17,7 @@ use crate::{
             EaseOut,
         },
         line_trace::{aabb_sphere_intersect, line_trace, line_trace_animate_hit},
+        voxel_builder::{self, VoxelHandler},
     },
 };
 
@@ -35,6 +36,7 @@ pub struct Gameloop {
     pub elapsed_time: f32,
     pub chunk_size: Vector3<u32>,
     pub animation_handler: AnimationHandler,
+    pub voxel_helper: VoxelHandler,
 }
 
 impl Gameloop {
@@ -44,38 +46,16 @@ impl Gameloop {
             self.animation_handler.animate(dts);
 
             for (i, instance) in instance_controller.instances.iter_mut().enumerate() {
-                let local_x = (i % self.chunk_size.x as usize) as u64;
-                let local_z =
-                    ((i / self.chunk_size.x as usize) % self.chunk_size.z as usize) as u64;
-                let local_y =
-                    (i / (self.chunk_size.x as usize * self.chunk_size.z as usize)) as u64;
-
-                let delay = ((local_x as f32 + local_z as f32) * 0.05) as f32;
-                // Diagonal wave offset for this tile
-                let lerp = 1.0 * ease_in_ease_out_loop(self.elapsed_time, delay as f32, 1.0);
-                // if i == 1 {
-                //     println!("{:?}", lerp);
                 // }
                 self.animation_handler.update_instance(i, instance);
 
-                // if (i == 200) {
-                //     println!("{:?}", height);
-                // }
-                // if self.animation_handler.disabled {
-                //     let pos = Vector3::new(0.0, lerp, 0.0);
-
-                //     if let Some(animation) = self.animation_handler.movement_list.get_mut(i) {
-                //         instance.position = animation.current_pos + pos;
-                //         instance.bounding = instance.size + animation.current_pos + pos;
-                //     }
-                // }
-                instance.color = get_height_color(lerp)
-                // test += 15;
+                // instance_controller.update_buffer(&self.queue);
+                // assuming queue: Arc<wgpu::Queue>
             }
+            instance_controller.update_buffer_multithreaded(Arc::clone(&self.queue));
 
-            instance_controller.update_buffer(&self.queue);
+            self.elapsed_time += dts;
         }
-        self.elapsed_time += dts;
     }
     pub fn process_event(
         &mut self,
@@ -104,6 +84,63 @@ impl Gameloop {
                         } else {
                             self.animation_handler.disable();
                             println!("Disabled animations")
+                        }
+                    }
+                    _ => {}
+                },
+                KeyCode::Home => match state {
+                    winit::event::ElementState::Pressed => {
+                        let target_chunk = Chunk { x: 0, y: 0 };
+
+                        if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
+                            self.animation_handler
+                                .reset_instance_position_to_current_position(
+                                    &mut controller.instances,
+                                );
+                            controller.update_buffer(&self.queue);
+                        }
+                    }
+                    _ => {}
+                },
+                KeyCode::End => match state {
+                    winit::event::ElementState::Pressed => {
+                        let target_chunk = Chunk { x: 0, y: 0 };
+
+                        if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
+                            self.voxel_helper.transition_to_object(
+                                0,
+                                &mut controller.instances,
+                                &mut self.animation_handler,
+                            );
+                            controller.update_buffer(&self.queue);
+                        }
+                    }
+                    _ => {}
+                },
+                KeyCode::PageUp => match state {
+                    winit::event::ElementState::Pressed => {
+                        let target_chunk = Chunk { x: 0, y: 0 };
+
+                        if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
+                            self.voxel_helper.transition_to_object(
+                                1,
+                                &mut controller.instances,
+                                &mut self.animation_handler,
+                            );
+                        }
+                    }
+                    _ => {}
+                },
+                KeyCode::PageDown => match state {
+                    winit::event::ElementState::Pressed => {
+                        let target_chunk = Chunk { x: 0, y: 0 };
+
+                        if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
+                            self.voxel_helper.transition_to_object(
+                                2,
+                                &mut controller.instances,
+                                &mut self.animation_handler,
+                            );
                         }
                     }
                     _ => {}
@@ -152,6 +189,7 @@ impl Gameloop {
                                     if let Some(i) = line_trace(controller, test) {
                                         if let Some(instance) = controller.instances.get_mut(i) {
                                             instance.should_render = false;
+                                            controller.count -= 1;
                                         }
                                     }
                                 }
@@ -268,11 +306,11 @@ impl Gameloop {
                 // line_trace(&mut self.instance_controller2, camera, &self.queue, &self.device, test);
                 let target_chunk = Chunk { x: 0, y: 0 };
 
-                if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
-                    let test = line_trace(controller, test);
-
-                    println!("{:?}", test)
-                }
+                // if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
+                //     if let Some(i) = line_trace(controller, test) {
+                //         controller.remove_instance(i, &self.queue);
+                //     }
+                // }
             }
             _ => {}
         }
@@ -290,14 +328,15 @@ impl Gameloop {
 
         let persistent = AnimationPersistent::new(
             Vector3 {
-                x: 0.0,
-                y: 1.0,
+                x: 1.0,
+                y: 2.0,
                 z: 0.0,
             },
             AnimationTransition::EaseInEaseOutLoop(EaseInEaseOutLoop),
         );
 
         let animation_enums = vec![AnimationType::Persistent(persistent)];
+        // let animation_enums = vec![];
         let animation_handler = AnimationHandler::new(&instance_controller, animation_enums);
 
         Gameloop {
@@ -307,7 +346,7 @@ impl Gameloop {
             queue,
             chunk_map,
             elapsed_time: 0.0,
-
+            voxel_helper: VoxelHandler::new(),
             chunk_size,
             animation_handler,
         }

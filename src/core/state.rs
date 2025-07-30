@@ -119,7 +119,7 @@ impl State {
 
         // Setup camera
         let camera = Camera {
-            eye: (-18.0, 23.0, -18.0).into(),
+            eye: (-35.0, 70.0, -35.0).into(),
             target: (15.0, 0.0, 15.0).into(),
             up: cgmath::Vector3::unit_y(),
             aspect: config.width as f32 / config.height as f32,
@@ -127,7 +127,7 @@ impl State {
             znear: 0.1,
             zfar: 1.0,
         };
-        let camera_controller = CameraController::new(0.2);
+        let camera_controller = CameraController::new(1.0);
         log::warn!("Camera");
 
         let mut camera_uniform = CameraUniform::new();
@@ -192,7 +192,7 @@ impl State {
         // Create instance controller and game loop
 
         let chunk_size = Vector2::new(35, 35);
-        let chunk_size_cube = Vector3::new(25, 10, 25);
+        let chunk_size_cube = Vector3::new(25, 40, 25);
 
         let mut chunk_map: HashMap<Chunk, InstanceController> = HashMap::new();
         let mesh = make_cube_primitive();
@@ -222,8 +222,8 @@ impl State {
                 }
             }
             Mesh::Textured(_) => {
-                for n in 0..1 {
-                    for y in 0..1 {
+                for n in 0..5 {
+                    for y in 0..5 {
                         let origin = Chunk { x: n, y: y };
                         let mesh = make_cube_textured();
                         let (mb, renderer) = mesh.get_mesh_buffer(
@@ -247,7 +247,7 @@ impl State {
             }
         }
 
-        let game_loop = Gameloop::new(
+        let mut game_loop = Gameloop::new(
             "Loop".to_string(),
             PhysicalPosition::new(0.0, 0.0),
             Arc::clone(&device),
@@ -255,6 +255,11 @@ impl State {
             chunk_size_cube,
             chunk_map,
         );
+
+        game_loop.voxel_helper.add_voxel("src/test.vox");
+        game_loop.voxel_helper.add_voxel("src/castle.vox");
+        game_loop.voxel_helper.add_voxel("src/chr_knight.vox");
+
         log::warn!("Done");
 
         // Return initialized State
@@ -378,9 +383,8 @@ impl State {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             for instance_controller in self.game_loop.chunk_map.values_mut() {
+                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
                 instance_controller.render(&mut render_pass);
             }
         }
