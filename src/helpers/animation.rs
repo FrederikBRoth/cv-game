@@ -124,15 +124,19 @@ pub struct AnimationStep {
     reversed: bool,
     activated: bool,
     animating: bool,
+    speed: f32,
     animation_transition: AnimationTransition,
+    one_time_animation: bool,
 }
 
 impl AnimationStep {
     /// Constructs a new AnimationStep
     pub fn new(
         movement_vector: Vector3<f32>,
+        speed: f32,
         reversed: bool,
         activated: bool,
+        one_time_animation: bool,
         animation_transition: AnimationTransition,
     ) -> Self {
         Self {
@@ -140,6 +144,8 @@ impl AnimationStep {
             time: 0.0,
             reversed,
             activated,
+            speed,
+            one_time_animation,
             animating: false,
             animation_transition,
         }
@@ -152,8 +158,8 @@ pub struct Animation {
     time: f32,
     pub start: Vector3<f32>,
     pub current_pos: Vector3<f32>,
+    pub grid_pos: Vector3<f32>,
     persistent_animation: Vec<AnimationPersistent>,
-    persistent_delta: Vector3<f32>,
 
     animations: Vec<AnimationStep>,
     color: Vector3<f32>,
@@ -187,14 +193,10 @@ impl AnimationHandler {
                     .instances
                     .iter()
                     .map(|instance| Animation {
-                        persistent_delta: Vector3 {
-                            x: 0.0,
-                            y: 0.0,
-                            z: 0.0,
-                        },
                         activated: true,
                         start: instance.position,
                         current_pos: instance.position,
+                        grid_pos: instance.position,
                         persistent_animation: persistents.clone(),
                         animations: steps.clone(),
                         color: Vector3 {
@@ -232,6 +234,18 @@ impl AnimationHandler {
         }
     }
 
+    pub fn is_locked(&mut self) -> bool {
+        let mut locked = false;
+        for animation in self.movement_list.iter_mut() {
+            for step in animation.animations.iter_mut() {
+                if (step.one_time_animation) {
+                    locked = step.one_time_animation
+                }
+            }
+        }
+        locked
+    }
+
     pub fn set_animation_state(&mut self, index: usize, state: bool) {
         if self.disabled {
             return;
@@ -239,9 +253,7 @@ impl AnimationHandler {
         if let Some(animation) = self.movement_list.get_mut(index) {
             for step in animation.animations.iter_mut() {
                 step.activated = state;
-                if !step.animating {
-                    step.animating = state;
-                }
+                step.animating = state;
             }
         }
     }
@@ -260,27 +272,19 @@ impl AnimationHandler {
                 if animation.animations.is_empty() {
                     continue;
                 }
-                let mut total_movement = animation.start.clone();
-                for step in animation.animations.iter_mut() {
-                    if step.reversed {
-                        total_movement -= step.animation_transition.lerp(
-                            animation.start + step.movement_vector,
-                            animation.start,
-                            step.time,
-                            0.0,
-                        ) - (animation.start + step.movement_vector);
-                    } else {
-                        step.time = step.time.clamp(0.0, 1.0);
-                        total_movement += step.animation_transition.lerp(
-                            animation.start,
-                            animation.start + step.movement_vector,
-                            step.time,
-                            0.0,
-                        ) - animation.start;
-                    };
+
+                let delay = ((animation.current_pos.x + animation.current_pos.z) * 0.05);
+                let mut total_movement = Vector3::new(0.0, 0.0, 0.0);
+                for persistent in animation.persistent_animation.iter_mut() {
+                    total_movement += persistent.animation_transition.lerp(
+                        animation.start,
+                        animation.start + persistent.movement_vector,
+                        persistent.time,
+                        delay,
+                    ) - animation.start;
                 }
-                instance.position = total_movement;
-                instance.bounding = instance.size + total_movement;
+                instance.position = animation.current_pos - total_movement;
+                instance.bounding = animation.current_pos + animation.current_pos - total_movement;
                 animation.start = instance.position;
             } else {
                 continue;
@@ -313,27 +317,28 @@ impl AnimationHandler {
                     delay,
                 ) - animation.start;
             }
-            animation.persistent_delta = total_movement.clone() - animation.start;
             let lerp = 1.0 * ease_in_ease_out_loop(animation.time, delay as f32, 1.0);
             animation.color = get_height_color(lerp);
-            for (i, step) in animation.animations.iter_mut().enumerate() {
+            let mut step_delta = Vector3::new(0.0, 0.0, 0.0);
+            for (step_i, step) in animation.animations.iter_mut().enumerate() {
+                let mut step_movement = Vector3::new(0.0, 0.0, 0.0);
                 if !step.activated {
                     continue;
                 }
 
                 if step.reversed {
-                    step.time -= delta;
+                    step.time -= delta * step.speed;
                     step.time = step.time.clamp(0.0, 1.0);
-                    total_movement -= step.animation_transition.lerp(
+                    step_movement -= step.animation_transition.lerp(
                         animation.start + step.movement_vector,
                         animation.start,
                         step.time,
                         0.0,
                     ) - (animation.start + step.movement_vector);
                 } else {
-                    step.time += delta;
+                    step.time += delta * step.speed;
                     step.time = step.time.clamp(0.0, 1.0);
-                    total_movement += step.animation_transition.lerp(
+                    step_movement += step.animation_transition.lerp(
                         animation.start,
                         animation.start + step.movement_vector,
                         step.time,
@@ -343,12 +348,20 @@ impl AnimationHandler {
                 if step.time == 0.0 || step.time == 1.0 {
                     step.animating = false
                 }
-            }
-            animation
-                .animations
-                .retain(|step| !(step.reversed && step.time == 0.0));
 
+                if step.one_time_animation && step.time == 1.0 {
+                    animation.start = animation.start + step_movement;
+                    animation.grid_pos = animation.start + step_movement;
+                }
+                step_delta += step_movement;
+            }
+            animation.grid_pos = animation.start + step_delta;
+            total_movement += step_delta;
             animation.current_pos = total_movement;
+            animation.animations.retain(|step| {
+                !((step.reversed && step.time == 0.0)
+                    || (step.one_time_animation && step.time == 1.0))
+            });
         }
     }
 

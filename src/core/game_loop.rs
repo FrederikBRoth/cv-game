@@ -97,7 +97,7 @@ impl Gameloop {
                                 .reset_instance_position_to_current_position(
                                     &mut controller.instances,
                                 );
-                            controller.update_buffer(&self.queue);
+                            // controller.update_buffer(&self.queue);
                         }
                     }
                     _ => {}
@@ -105,6 +105,7 @@ impl Gameloop {
                 KeyCode::End => match state {
                     winit::event::ElementState::Pressed => {
                         let target_chunk = Chunk { x: 0, y: 0 };
+                        log::warn!("Clicked");
 
                         if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
                             self.voxel_helper.transition_to_object(
@@ -112,7 +113,6 @@ impl Gameloop {
                                 &mut controller.instances,
                                 &mut self.animation_handler,
                             );
-                            controller.update_buffer(&self.queue);
                         }
                     }
                     _ => {}
@@ -120,7 +120,7 @@ impl Gameloop {
                 KeyCode::PageUp => match state {
                     winit::event::ElementState::Pressed => {
                         let target_chunk = Chunk { x: 0, y: 0 };
-
+                        println!("{:?}", camera.eye);
                         if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
                             self.voxel_helper.transition_to_object(
                                 1,
@@ -140,6 +140,20 @@ impl Gameloop {
                                 2,
                                 &mut controller.instances,
                                 &mut self.animation_handler,
+                            );
+                        }
+                    }
+                    _ => {}
+                },
+                KeyCode::ScrollLock => match state {
+                    winit::event::ElementState::Pressed => {
+                        let target_chunk = Chunk { x: 0, y: 0 };
+
+                        if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
+                            self.voxel_helper.explode_object(
+                                &mut controller.instances,
+                                &mut self.animation_handler,
+                                25.0,
                             );
                         }
                     }
@@ -224,7 +238,9 @@ impl Gameloop {
                                         y: 1.0,
                                         z: 0.0,
                                     },
+                                    1.0,
                                     true,
+                                    false,
                                     false,
                                     AnimationTransition::EaseInEaseOut(EaseInEaseOut),
                                 ));
@@ -268,6 +284,8 @@ impl Gameloop {
                                             let animation =
                                                 AnimationType::Step(AnimationStep::new(
                                                     target_position,
+                                                    1.0,
+                                                    false,
                                                     false,
                                                     false,
                                                     AnimationTransition::EaseOut(EaseOut),

@@ -5,7 +5,8 @@ use std::sync::Arc;
 use cgmath::{Vector2, Vector3};
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
-use winit::event::WindowEvent;
+use winit::event::{KeyEvent, WindowEvent};
+use winit::keyboard::{Key, KeyCode, PhysicalKey};
 use winit::window::Window;
 
 use crate::core::game_loop::Chunk;
@@ -119,15 +120,15 @@ impl State {
 
         // Setup camera
         let camera = Camera {
-            eye: (-35.0, 70.0, -35.0).into(),
-            target: (15.0, 0.0, 15.0).into(),
+            eye: (-100.0, 140.0, -100.0).into(),
+            target: (12.5, 30.0, 12.5).into(),
             up: cgmath::Vector3::unit_y(),
             aspect: config.width as f32 / config.height as f32,
             fovy: 20.0,
             znear: 0.1,
             zfar: 1.0,
         };
-        let camera_controller = CameraController::new(1.0);
+        let camera_controller = CameraController::new(0.4);
         log::warn!("Camera");
 
         let mut camera_uniform = CameraUniform::new();
@@ -256,9 +257,13 @@ impl State {
             chunk_map,
         );
 
-        game_loop.voxel_helper.add_voxel("src/test.vox");
-        game_loop.voxel_helper.add_voxel("src/castle.vox");
-        game_loop.voxel_helper.add_voxel("src/chr_knight.vox");
+        let test = include_bytes!("../../src/test.vox");
+        let castle = include_bytes!("../../src/castle.vox");
+        let chr_knight = include_bytes!("../../src/chr_knight.vox");
+
+        game_loop.voxel_helper.add_voxel(test);
+        game_loop.voxel_helper.add_voxel(castle);
+        game_loop.voxel_helper.add_voxel(chr_knight);
 
         log::warn!("Done");
 
@@ -310,9 +315,42 @@ impl State {
         }
     }
     pub fn input(&mut self, event: &WindowEvent) -> bool {
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        state,
+                        physical_key: PhysicalKey::Code(keycode),
+                        ..
+                    },
+                ..
+            } => match keycode {
+                KeyCode::Space => match state {
+                    winit::event::ElementState::Pressed => {
+                        self.camera_controller.auto = !self.camera_controller.auto;
+                        if (self.camera_controller.auto) {
+                            self.camera_controller.is_right_pressed = true;
+
+                            self.camera_controller.speed = 0.4;
+                        } else {
+                            self.camera_controller.speed = 1.0;
+                            self.camera_controller.is_right_pressed = false;
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
+            },
+
+            _ => {}
+        }
         self.game_loop
             .process_event(event, &self.camera, &self.size);
-        self.camera_controller.process_events(event)
+        if (!self.camera_controller.auto) {
+            self.camera_controller.process_events(event)
+        } else {
+            false
+        }
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
@@ -324,6 +362,38 @@ impl State {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
         self.game_loop.update(dt);
+
+        if self.camera_controller.auto {
+            if self.game_loop.elapsed_time < 5.0 {
+                return;
+            }
+            let target_chunk = Chunk { x: 0, y: 0 };
+            let animation_time = self.game_loop.elapsed_time % 24.0;
+            let ready = !self.game_loop.animation_handler.is_locked();
+            if let Some(controller) = self.game_loop.chunk_map.get_mut(&target_chunk) {
+                if animation_time.floor() == 0.0 && ready {
+                    self.game_loop.voxel_helper.transition_to_object(
+                        0,
+                        &mut controller.instances,
+                        &mut self.game_loop.animation_handler,
+                    );
+                }
+                if animation_time.floor() == 8.0 && ready {
+                    self.game_loop.voxel_helper.transition_to_object(
+                        1,
+                        &mut controller.instances,
+                        &mut self.game_loop.animation_handler,
+                    );
+                }
+                if animation_time.floor() == 16.0 && ready {
+                    self.game_loop.voxel_helper.transition_to_object(
+                        2,
+                        &mut controller.instances,
+                        &mut self.game_loop.animation_handler,
+                    );
+                }
+            }
+        }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

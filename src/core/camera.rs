@@ -92,6 +92,7 @@ impl CameraUniform {
 }
 
 pub struct CameraController {
+    pub auto: bool,
     pub speed: f32,
     pub is_up_pressed: bool,
     pub is_down_pressed: bool,
@@ -104,13 +105,14 @@ pub struct CameraController {
 impl CameraController {
     pub fn new(speed: f32) -> Self {
         Self {
+            auto: true,
             speed,
             is_up_pressed: false,
             is_down_pressed: false,
             is_forward_pressed: false,
             is_backward_pressed: false,
             is_left_pressed: false,
-            is_right_pressed: false,
+            is_right_pressed: true,
         }
     }
 
