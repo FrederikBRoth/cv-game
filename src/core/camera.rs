@@ -1,5 +1,7 @@
 use cgmath::{EuclideanSpace, InnerSpace, Point3, SquareMatrix, Vector3, Vector4};
+use wgpu::{hal::dx12::BindGroup, util::DeviceExt, BindGroupLayout, Device, Queue};
 use winit::{
+    dpi::PhysicalSize,
     event::{ElementState, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
@@ -92,6 +94,11 @@ impl CameraUniform {
 }
 
 pub struct CameraController {
+    pub camera: Camera,
+    pub camera_uniform: CameraUniform,
+    pub camera_buffer: wgpu::Buffer,
+    pub camera_bind_group_layout: BindGroupLayout,
+    pub camera_bind_group: wgpu::BindGroup,
     pub auto: bool,
     pub speed: f32,
     pub is_up_pressed: bool,
@@ -103,10 +110,58 @@ pub struct CameraController {
 }
 
 impl CameraController {
-    pub fn new(speed: f32) -> Self {
+    pub fn new(speed: f32, screen_size: PhysicalSize<u32>, device: &Device) -> Self {
+        let camera = Camera {
+            eye: (-100.0, 140.0, -100.0).into(),
+            target: (12.5, 30.0, 12.5).into(),
+            up: cgmath::Vector3::unit_y(),
+            aspect: screen_size.width as f32 / screen_size.height as f32,
+            fovy: 20.0,
+            znear: 0.1,
+            zfar: 1.0,
+        };
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Create layout and bind group for camera
+        let camera_bind_group_layout: wgpu::BindGroupLayout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
+        log::warn!("Shader");
         Self {
             auto: true,
             speed,
+            camera,
+            camera_uniform,
+            camera_bind_group,
+            camera_bind_group_layout,
+            camera_buffer,
             is_up_pressed: false,
             is_down_pressed: false,
             is_forward_pressed: false,
@@ -163,34 +218,38 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&self, camera: &mut Camera) {
-        let forward = camera.target - camera.eye;
+    pub fn update_camera(&mut self) {
+        let forward = self.camera.target - self.camera.eye;
         let forward_norm = forward.normalize();
         let forward_mag = forward.magnitude();
 
         // Prevents glitching when camera gets too close to the
         // center of the scene.
         if self.is_forward_pressed && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
+            self.camera.eye += forward_norm * self.speed;
         }
         if self.is_backward_pressed {
-            camera.eye -= forward_norm * self.speed;
+            self.camera.eye -= forward_norm * self.speed;
         }
 
-        let right = forward_norm.cross(camera.up);
+        let right = forward_norm.cross(self.camera.up);
 
         // Redo radius calc in case the up/ down is pressed.
-        let forward = camera.target - camera.eye;
+        let forward = self.camera.target - self.camera.eye;
         let forward_mag = forward.magnitude();
 
         if self.is_right_pressed {
             // Rescale the distance between the target and eye so
             // that it doesn't change. The eye therefore still
             // lies on the circle made by the target and eye.
-            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
+            self.camera.eye =
+                self.camera.target - (forward + right * self.speed).normalize() * forward_mag;
         }
         if self.is_left_pressed {
-            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
+            self.camera.eye =
+                self.camera.target - (forward - right * self.speed).normalize() * forward_mag;
         }
+
+        self.camera_uniform.update_view_proj(&self.camera);
     }
 }

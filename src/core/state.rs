@@ -11,8 +11,8 @@ use winit::window::Window;
 
 use crate::core::game_loop::Chunk;
 use crate::entity::entity::{
-    instances_list, instances_list_circle, instances_list_cube, instances_list_cylinder,
-    make_cube_primitive, make_cube_textured, InstanceController, Mesh,
+    instances_list, instances_list_cube, make_cube_primitive, make_cube_textured,
+    InstanceController,
 };
 use crate::entity::primitive_texture::PrimitiveTexture;
 use crate::entity::texture::Texture;
@@ -28,20 +28,13 @@ pub struct State {
     pub config: wgpu::SurfaceConfiguration,  // Surface configuration settings
     pub size: winit::dpi::PhysicalSize<u32>, // Window size
     #[allow(dead_code)]
-    pub camera: Camera, // Camera object
-    pub camera_controller: CameraController, // Handles input-based camera movement
-    pub camera_uniform: CameraUniform,       // Uniform buffer for camera
-    pub camera_buffer: wgpu::Buffer,         // GPU buffer for camera data
-    pub camera_bind_group: wgpu::BindGroup,  // Bind group for camera
+    // Handles input-based camera movement
+    // Bind group for camera
     #[allow(dead_code)]
-    pub depth_texture: Texture,
-    pub depth_texture_primitive: PrimitiveTexture,
     pub window: Arc<Window>, // Application window
     pub game_loop: Gameloop,
     //temp solution
     //--TODO change
-    pub chunk_size: Vector2<u32>,
-    pub mesh: Mesh, // Game logic loop
 }
 
 impl State {
@@ -119,142 +112,17 @@ impl State {
         };
 
         // Setup camera
-        let camera = Camera {
-            eye: (-100.0, 140.0, -100.0).into(),
-            target: (12.5, 30.0, 12.5).into(),
-            up: cgmath::Vector3::unit_y(),
-            aspect: config.width as f32 / config.height as f32,
-            fovy: 20.0,
-            znear: 0.1,
-            zfar: 1.0,
-        };
-        let camera_controller = CameraController::new(0.4);
-        log::warn!("Camera");
-
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
 
         // Create uniform buffer for camera
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[camera_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        // Create layout and bind group for camera
-        let camera_bind_group_layout: wgpu::BindGroupLayout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("camera_bind_group_layout"),
-            });
-
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-            label: Some("camera_bind_group"),
-        });
-        log::warn!("Shader");
-
+        log::warn!("Camera");
         // Load shaders
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
-        });
-
-        // Load shaders
-        let primitive_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("PrimitiveShader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/primitive.wgsl").into()),
-        });
-
-        // Create depth texture for texture meshes
-        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
-
-        let depth_texture_primitive =
-            PrimitiveTexture::create_depth_texture(&device, &config, "depth_texture_prim");
-        // Create depth texture for primitive
-
-        log::warn!("Pipeline");
-
-        // Create render pipeline
-
-        // Create instance controller and game loop
-
-        let chunk_size = Vector2::new(35, 35);
-        let chunk_size_cube = Vector3::new(25, 40, 25);
-
-        let mut chunk_map: HashMap<Chunk, InstanceController> = HashMap::new();
-        let mesh = make_cube_primitive();
-        match mesh {
-            Mesh::Primitive(_) => {
-                for n in 0..1 {
-                    for y in 0..1 {
-                        let origin = Chunk { x: n, y: y };
-                        let mesh = make_cube_primitive();
-                        let (mb, renderer) = mesh.get_mesh_buffer(
-                            &device,
-                            &primitive_shader,
-                            surface_format,
-                            &queue,
-                            camera_bind_group_layout.clone(),
-                        );
-                        let instance_controller = InstanceController::new(
-                            // instances_list_circle(origin, chunk_size),
-                            instances_list_cube(origin, chunk_size_cube),
-                            0,
-                            mb,
-                            renderer,
-                            &device,
-                        );
-                        chunk_map.insert(origin, instance_controller);
-                    }
-                }
-            }
-            Mesh::Textured(_) => {
-                for n in 0..5 {
-                    for y in 0..5 {
-                        let origin = Chunk { x: n, y: y };
-                        let mesh = make_cube_textured();
-                        let (mb, renderer) = mesh.get_mesh_buffer(
-                            &device,
-                            &shader,
-                            surface_format,
-                            &queue,
-                            camera_bind_group_layout.clone(),
-                        );
-                        let instance_controller = InstanceController::new(
-                            instances_list(origin, chunk_size),
-                            0,
-                            mb,
-                            renderer,
-                            &device,
-                        );
-                        // let instance_controller2 = InstanceController::new(instances_list2(), 0, make_cube(&device), &device);
-                        chunk_map.insert(origin, instance_controller);
-                    }
-                }
-            }
-        }
 
         let mut game_loop = Gameloop::new(
             "Loop".to_string(),
-            PhysicalPosition::new(0.0, 0.0),
             Arc::clone(&device),
             Arc::clone(&queue),
-            chunk_size_cube,
-            chunk_map,
+            size,
+            surface_format,
         );
 
         let test = include_bytes!("../../src/test.vox");
@@ -275,17 +143,8 @@ impl State {
             queue,
             config,
             size,
-            camera,
-            camera_controller,
-            camera_buffer,
-            camera_bind_group,
-            camera_uniform,
-            depth_texture,
-            depth_texture_primitive,
             window,
             game_loop,
-            chunk_size,
-            mesh,
         }
     }
 
@@ -300,100 +159,29 @@ impl State {
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
             self.surface_configured = true;
-            self.camera.aspect = self.config.width as f32 / self.config.height as f32;
+            self.game_loop.camera_controller.camera.aspect =
+                self.config.width as f32 / self.config.height as f32;
             // NEW!
-            self.depth_texture =
-                Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
-            self.depth_texture_primitive = PrimitiveTexture::create_depth_texture(
-                &self.device,
-                &self.config,
-                "depth_texture_primitive",
-            );
+            for instance_controller in self.game_loop.instance_controllers.iter_mut() {
+                instance_controller.resize(new_size, &self.device);
+            }
         } else {
             println!("Not configured");
             self.surface_configured = false;
         }
     }
-    pub fn input(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        state,
-                        physical_key: PhysicalKey::Code(keycode),
-                        ..
-                    },
-                ..
-            } => match keycode {
-                KeyCode::Space => match state {
-                    winit::event::ElementState::Pressed => {
-                        self.camera_controller.auto = !self.camera_controller.auto;
-                        if (self.camera_controller.auto) {
-                            self.camera_controller.is_right_pressed = true;
-
-                            self.camera_controller.speed = 0.4;
-                        } else {
-                            self.camera_controller.speed = 1.0;
-                            self.camera_controller.is_right_pressed = false;
-                        }
-                    }
-                    _ => {}
-                },
-                _ => {}
-            },
-
-            _ => {}
-        }
-        self.game_loop
-            .process_event(event, &self.camera, &self.size);
-        if (!self.camera_controller.auto) {
-            self.camera_controller.process_events(event)
-        } else {
-            false
-        }
+    pub fn input(&mut self, event: &WindowEvent) {
+        self.game_loop.process_event(event, &self.size);
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
+        self.game_loop.camera_controller.update_camera();
         self.queue.write_buffer(
-            &self.camera_buffer,
+            &self.game_loop.camera_controller.camera_buffer,
             0,
-            bytemuck::cast_slice(&[self.camera_uniform]),
+            bytemuck::cast_slice(&[self.game_loop.camera_controller.camera_uniform]),
         );
         self.game_loop.update(dt);
-
-        if self.camera_controller.auto {
-            if self.game_loop.elapsed_time < 5.0 {
-                return;
-            }
-            let target_chunk = Chunk { x: 0, y: 0 };
-            let animation_time = self.game_loop.elapsed_time % 24.0;
-            let ready = !self.game_loop.animation_handler.is_locked();
-            if let Some(controller) = self.game_loop.chunk_map.get_mut(&target_chunk) {
-                if animation_time.floor() == 0.0 && ready {
-                    self.game_loop.voxel_helper.transition_to_object(
-                        0,
-                        &mut controller.instances,
-                        &mut self.game_loop.animation_handler,
-                    );
-                }
-                if animation_time.floor() == 8.0 && ready {
-                    self.game_loop.voxel_helper.transition_to_object(
-                        1,
-                        &mut controller.instances,
-                        &mut self.game_loop.animation_handler,
-                    );
-                }
-                if animation_time.floor() == 16.0 && ready {
-                    self.game_loop.voxel_helper.transition_to_object(
-                        2,
-                        &mut controller.instances,
-                        &mut self.game_loop.animation_handler,
-                    );
-                }
-            }
-        }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -414,49 +202,7 @@ impl State {
             });
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 0.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: {
-                    match self.mesh {
-                        Mesh::Primitive(_) => Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &self.depth_texture_primitive.view,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0), // Clear depth buffer to far plane
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                        Mesh::Textured(_) => Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &self.depth_texture.view,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0),
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                    }
-                },
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-            for instance_controller in self.game_loop.chunk_map.values_mut() {
-                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-                instance_controller.render(&mut render_pass);
-            }
+            self.game_loop.render(&mut encoder, &view);
         }
         self.queue.submit(iter::once(encoder.finish()));
         output.present();

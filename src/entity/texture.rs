@@ -1,5 +1,6 @@
 use anyhow::*;
 use image::GenericImageView;
+use winit::dpi::PhysicalSize;
 
 pub struct Texture {
     #[allow(unused)]
@@ -14,12 +15,12 @@ impl Texture {
     #[allow(unused)]
     pub fn create_depth_texture(
         device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
+        size: &PhysicalSize<u32>,
         label: &str,
     ) -> Self {
         let size = wgpu::Extent3d {
-            width: config.width.max(1),
-            height: config.height.max(1),
+            width: size.width.max(1),
+            height: size.height.max(1),
             depth_or_array_layers: 1,
         };
         let desc = wgpu::TextureDescriptor {
@@ -57,12 +58,13 @@ impl Texture {
     #[allow(unused)]
     pub fn create_depth_texture_non_comparison_sampler(
         device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
+        size: &PhysicalSize<u32>,
+
         label: &str,
     ) -> Self {
         let size = wgpu::Extent3d {
-            width: config.width.max(1),
-            height: config.height.max(1),
+            width: size.width.max(1),
+            height: size.height.max(1),
             depth_or_array_layers: 1,
         };
         let desc = wgpu::TextureDescriptor {

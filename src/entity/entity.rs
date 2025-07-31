@@ -7,11 +7,13 @@ use crate::{
     core::game_loop::Chunk,
     entity::{
         entities::cube::{PrimitiveCube, TexturedCube},
+        primitive_texture::PrimitiveTexture,
         texture::Texture,
     },
 };
 use cgmath::{prelude::*, Vector2, Vector3};
 use wgpu::{util::DeviceExt, BindGroupLayout, RenderPass, TextureFormat};
+use winit::dpi::PhysicalSize;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -266,7 +268,42 @@ impl InstanceController {
             bytemuck::cast_slice(&data),
         );
     }
-    pub fn render(&mut self, render_pass: &mut RenderPass) {
+    pub fn render(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        camera_bind: wgpu::BindGroup,
+    ) {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: {
+                Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.entity_buffers.depth_texture,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                })
+            },
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        render_pass.set_bind_group(0, &camera_bind, &[]);
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_pipeline(&self.render.pipeline);
         if let Some(diffuse) = &self.render.diffuse {
@@ -292,6 +329,381 @@ impl InstanceController {
             .map(Instance::to_raw)
             .collect()
     }
+
+    pub fn resize(&mut self, new_size: PhysicalSize<u32>, device: &wgpu::Device) {
+        match self.entity_buffers.mesh_type {
+            MeshType::Primitive => {
+                self.entity_buffers.depth_texture = PrimitiveTexture::create_depth_texture(
+                    device,
+                    &new_size,
+                    "depth_texture_primitive",
+                )
+                .view
+            }
+            MeshType::Textured => {
+                self.entity_buffers.depth_texture = PrimitiveTexture::create_depth_texture(
+                    device,
+                    &new_size,
+                    "depth_texture_primitive",
+                )
+                .view
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Instance {
+    pub position: cgmath::Vector3<f32>,
+    pub rotation: cgmath::Quaternion<f32>,
+    pub should_render: bool,
+    pub scale: f32,
+    pub color: cgmath::Vector3<f32>,
+    pub size: cgmath::Vector3<f32>,
+    pub bounding: cgmath::Vector3<f32>,
+}
+
+impl Instance {
+    pub fn to_raw(&self) -> InstanceRaw {
+        InstanceRaw {
+            model: ((cgmath::Matrix4::from_translation(self.position)
+                * cgmath::Matrix4::from(self.rotation))
+                * self.scale)
+                .into(),
+            color: cgmath::Vector3::from(self.color).into(),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct InstanceRaw {
+    #[allow(dead_code)]
+    pub model: [[f32; 4]; 4],
+    pub color: [f32; 3],
+}
+
+impl InstanceRaw {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
+            // We need to switch from using a step mode of Vertex to Instance
+            // This means that our shaders will only change to use the next
+            // instance when the shader starts processing a new instance
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials we'll
+                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5 not conflict with them later
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
+                // for each vec4. We don't have to do this in code though.
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
+                    shader_location: 9,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
+}
+
+pub struct MeshBuffer {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub depth_texture: wgpu::TextureView,
+    pub num_indices: u32,
+    pub mesh_type: MeshType,
+}
+
+pub enum MeshType {
+    Primitive,
+    Textured,
+}
+
+pub struct Renderer {
+    pub pipeline: wgpu::RenderPipeline,
+    pub diffuse: Option<wgpu::BindGroup>,
+}
+pub struct TexturedMesh {
+    pub vertices: Vec<TexturedVertex>,
+    pub indices: Vec<u16>,
+    pub texture_bytes: Vec<u8>,
+}
+
+impl TexturedMesh {
+    pub fn get_mesh_buffer(
+        &self,
+        device: &wgpu::Device,
+        shader: &wgpu::ShaderModule,
+        format: TextureFormat,
+        queue: &wgpu::Queue,
+        camera_bind_group_layout: BindGroupLayout,
+        size: PhysicalSize<u32>,
+    ) -> (MeshBuffer, Renderer) {
+        let depth_texture = Texture::create_depth_texture(&device, &size, "depth_texture");
+
+        let diffuse_bytes = &self.texture_bytes;
+        let diffuse_texture =
+            Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
+        log::warn!("Texture");
+
+        // Create bind group layout for texture and sampler
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        // Create bind group for the texture
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&camera_bind_group_layout, &texture_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[TexturedVertex::desc(), InstanceRaw::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent::REPLACE,
+                        alpha: wgpu::BlendComponent::REPLACE,
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        let mb = MeshBuffer {
+            vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&self.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+            index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(&self.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            }),
+            depth_texture: depth_texture.view,
+            num_indices: self.indices.len() as u32,
+            mesh_type: MeshType::Textured,
+        };
+
+        let render = Renderer {
+            diffuse: Some(diffuse_bind_group),
+            pipeline: render_pipeline,
+        };
+
+        (mb, render)
+    }
+}
+pub struct PrimitiveMesh {
+    pub vertices: Vec<PrimitiveVertex>,
+    pub indices: Vec<u16>,
+}
+
+impl PrimitiveMesh {
+    pub fn get_mesh_buffer(
+        &self,
+        device: &wgpu::Device,
+        shader: &wgpu::ShaderModule,
+        format: TextureFormat,
+        queue: &wgpu::Queue,
+        camera_bind_group_layout: BindGroupLayout,
+        size: PhysicalSize<u32>,
+    ) -> (MeshBuffer, Renderer) {
+        let depth_texture =
+            PrimitiveTexture::create_depth_texture(&device, &size, "depth_texture_prim");
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&camera_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[PrimitiveVertex::desc(), InstanceRaw::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent::REPLACE,
+                        alpha: wgpu::BlendComponent::REPLACE,
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less, // standard depth test
+                stencil: wgpu::StencilState::default(),     // no stencil operations
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            // If the pipeline will be used with a multiview render pass, this
+            // indicates how many array layers the attachments will have.
+            multiview: None,
+            // Useful for optimizing shader compilation on Android
+            cache: None,
+        });
+
+        let mb = MeshBuffer {
+            vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&self.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+            index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(&self.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            }),
+            depth_texture: depth_texture.view,
+            num_indices: self.indices.len() as u32,
+            mesh_type: MeshType::Primitive,
+        };
+        let renderer = Renderer {
+            pipeline: render_pipeline,
+            diffuse: None,
+        };
+
+        (mb, renderer)
+    }
+}
+
+pub fn make_cube_textured() -> TexturedMesh {
+    let cube = TexturedCube::new();
+
+    let polygon: TexturedMesh = TexturedMesh {
+        vertices: cube.vertices,
+        indices: cube.indices,
+        texture_bytes: include_bytes!("../happy-tree.png").to_vec(),
+    };
+    polygon
+}
+
+pub fn make_cube_primitive() -> PrimitiveMesh {
+    let cube = PrimitiveCube::new();
+    let polygon: PrimitiveMesh = PrimitiveMesh {
+        vertices: cube.vertices,
+        indices: cube.indices,
+    };
+
+    polygon
+}
+
+fn align_to(value: u64, alignment: u64) -> u64 {
+    (value + alignment - 1) / alignment * alignment
 }
 
 pub fn instances_list(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Instance> {
@@ -517,346 +929,4 @@ pub fn instances_list2() -> Vec<Instance> {
         })
         .collect::<Vec<_>>()
     // Vec::new()
-}
-#[derive(Clone)]
-pub struct Instance {
-    pub position: cgmath::Vector3<f32>,
-    pub rotation: cgmath::Quaternion<f32>,
-    pub should_render: bool,
-    pub scale: f32,
-    pub color: cgmath::Vector3<f32>,
-    pub size: cgmath::Vector3<f32>,
-    pub bounding: cgmath::Vector3<f32>,
-}
-
-impl Instance {
-    pub fn to_raw(&self) -> InstanceRaw {
-        InstanceRaw {
-            model: ((cgmath::Matrix4::from_translation(self.position)
-                * cgmath::Matrix4::from(self.rotation))
-                * self.scale)
-                .into(),
-            color: cgmath::Vector3::from(self.color).into(),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct InstanceRaw {
-    #[allow(dead_code)]
-    pub model: [[f32; 4]; 4],
-    pub color: [f32; 3],
-}
-
-impl InstanceRaw {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
-            // We need to switch from using a step mode of Vertex to Instance
-            // This means that our shaders will only change to use the next
-            // instance when the shader starts processing a new instance
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials we'll
-                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5 not conflict with them later
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
-                // for each vec4. We don't have to do this in code though.
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
-                    shader_location: 8,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
-                    shader_location: 9,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
-}
-
-pub struct MeshBuffer {
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub num_indices: u32,
-}
-
-pub enum Mesh {
-    Primitive(PrimitiveMesh),
-    Textured(TexturedMesh),
-}
-
-impl Mesh {
-    pub fn get_mesh_buffer(
-        &self,
-        device: &wgpu::Device,
-        shader: &wgpu::ShaderModule,
-        format: TextureFormat,
-        queue: &wgpu::Queue,
-        camera_bind_group_layout: BindGroupLayout,
-    ) -> (MeshBuffer, Renderer) {
-        match self {
-            Mesh::Primitive(primitive_vertex) => {
-                let render_pipeline_layout =
-                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("Render Pipeline Layout"),
-                        bind_group_layouts: &[&camera_bind_group_layout],
-                        push_constant_ranges: &[],
-                    });
-                let render_pipeline =
-                    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some("Render Pipeline"),
-                        layout: Some(&render_pipeline_layout),
-                        vertex: wgpu::VertexState {
-                            module: &shader,
-                            entry_point: Some("vs_main"),
-                            buffers: &[PrimitiveVertex::desc(), InstanceRaw::desc()],
-                            compilation_options: Default::default(),
-                        },
-                        fragment: Some(wgpu::FragmentState {
-                            module: &shader,
-                            entry_point: Some("fs_main"),
-                            targets: &[Some(wgpu::ColorTargetState {
-                                format,
-                                blend: Some(wgpu::BlendState {
-                                    color: wgpu::BlendComponent::REPLACE,
-                                    alpha: wgpu::BlendComponent::REPLACE,
-                                }),
-                                write_mask: wgpu::ColorWrites::ALL,
-                            })],
-                            compilation_options: Default::default(),
-                        }),
-                        primitive: wgpu::PrimitiveState {
-                            topology: wgpu::PrimitiveTopology::TriangleList,
-                            strip_index_format: None,
-                            front_face: wgpu::FrontFace::Ccw,
-                            cull_mode: Some(wgpu::Face::Back),
-                            polygon_mode: wgpu::PolygonMode::Fill,
-                            unclipped_depth: false,
-                            conservative: false,
-                        },
-                        depth_stencil: Some(wgpu::DepthStencilState {
-                            format: wgpu::TextureFormat::Depth32Float,
-                            depth_write_enabled: true,
-                            depth_compare: wgpu::CompareFunction::Less, // standard depth test
-                            stencil: wgpu::StencilState::default(),     // no stencil operations
-                            bias: wgpu::DepthBiasState::default(),
-                        }),
-                        multisample: wgpu::MultisampleState {
-                            count: 1,
-                            mask: !0,
-                            alpha_to_coverage_enabled: false,
-                        },
-                        // If the pipeline will be used with a multiview render pass, this
-                        // indicates how many array layers the attachments will have.
-                        multiview: None,
-                        // Useful for optimizing shader compilation on Android
-                        cache: None,
-                    });
-
-                let mb = MeshBuffer {
-                    vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Vertex Buffer"),
-                        contents: bytemuck::cast_slice(&primitive_vertex.vertices),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-                    index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Index Buffer"),
-                        contents: bytemuck::cast_slice(&primitive_vertex.indices),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-                    num_indices: primitive_vertex.indices.len() as u32,
-                };
-                let renderer = Renderer {
-                    pipeline: render_pipeline,
-                    diffuse: None,
-                };
-
-                (mb, renderer)
-            }
-            Mesh::Textured(textured_vertex) => {
-                let diffuse_bytes = &textured_vertex.texture_bytes;
-                let diffuse_texture =
-                    Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
-                log::warn!("Texture");
-
-                // Create bind group layout for texture and sampler
-                let texture_bind_group_layout =
-                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        entries: &[
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 0,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    multisampled: false,
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    sample_type: wgpu::TextureSampleType::Float {
-                                        filterable: true,
-                                    },
-                                },
-                                count: None,
-                            },
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 1,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                                count: None,
-                            },
-                        ],
-                        label: Some("texture_bind_group_layout"),
-                    });
-
-                // Create bind group for the texture
-                let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    layout: &texture_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                        },
-                    ],
-                    label: Some("diffuse_bind_group"),
-                });
-                let render_pipeline_layout =
-                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("Render Pipeline Layout"),
-                        bind_group_layouts: &[
-                            &camera_bind_group_layout,
-                            &texture_bind_group_layout,
-                        ],
-                        push_constant_ranges: &[],
-                    });
-
-                let render_pipeline =
-                    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some("Render Pipeline"),
-                        layout: Some(&render_pipeline_layout),
-                        vertex: wgpu::VertexState {
-                            module: &shader,
-                            entry_point: Some("vs_main"),
-                            buffers: &[TexturedVertex::desc(), InstanceRaw::desc()],
-                            compilation_options: Default::default(),
-                        },
-                        fragment: Some(wgpu::FragmentState {
-                            module: &shader,
-                            entry_point: Some("fs_main"),
-                            targets: &[Some(wgpu::ColorTargetState {
-                                format,
-                                blend: Some(wgpu::BlendState {
-                                    color: wgpu::BlendComponent::REPLACE,
-                                    alpha: wgpu::BlendComponent::REPLACE,
-                                }),
-                                write_mask: wgpu::ColorWrites::ALL,
-                            })],
-                            compilation_options: Default::default(),
-                        }),
-                        primitive: wgpu::PrimitiveState {
-                            topology: wgpu::PrimitiveTopology::TriangleList,
-                            strip_index_format: None,
-                            front_face: wgpu::FrontFace::Ccw,
-                            cull_mode: Some(wgpu::Face::Back),
-                            polygon_mode: wgpu::PolygonMode::Fill,
-                            unclipped_depth: false,
-                            conservative: false,
-                        },
-                        depth_stencil: Some(wgpu::DepthStencilState {
-                            format: Texture::DEPTH_FORMAT,
-                            depth_write_enabled: true,
-                            depth_compare: wgpu::CompareFunction::Less,
-                            stencil: wgpu::StencilState::default(),
-                            bias: wgpu::DepthBiasState::default(),
-                        }),
-                        multisample: wgpu::MultisampleState {
-                            count: 1,
-                            mask: !0,
-                            alpha_to_coverage_enabled: false,
-                        },
-                        multiview: None,
-                        cache: None,
-                    });
-
-                let mb = MeshBuffer {
-                    vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Vertex Buffer"),
-                        contents: bytemuck::cast_slice(&textured_vertex.vertices),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-                    index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Index Buffer"),
-                        contents: bytemuck::cast_slice(&textured_vertex.indices),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-                    num_indices: textured_vertex.indices.len() as u32,
-                };
-
-                let render = Renderer {
-                    diffuse: Some(diffuse_bind_group),
-                    pipeline: render_pipeline,
-                };
-
-                (mb, render)
-            }
-        }
-    }
-}
-
-pub struct Renderer {
-    pub pipeline: wgpu::RenderPipeline,
-    pub diffuse: Option<wgpu::BindGroup>,
-}
-pub struct TexturedMesh {
-    pub vertices: Vec<TexturedVertex>,
-    pub indices: Vec<u16>,
-    pub texture_bytes: Vec<u8>,
-}
-pub struct PrimitiveMesh {
-    pub vertices: Vec<PrimitiveVertex>,
-    pub indices: Vec<u16>,
-}
-
-pub fn make_cube_textured() -> Mesh {
-    let cube = TexturedCube::new();
-    let polygon: TexturedMesh = TexturedMesh {
-        vertices: cube.vertices,
-        indices: cube.indices,
-        texture_bytes: include_bytes!("../happy-tree.png").to_vec(),
-    };
-
-    Mesh::Textured(polygon)
-}
-
-pub fn make_cube_primitive() -> Mesh {
-    let cube = PrimitiveCube::new();
-    let polygon: PrimitiveMesh = PrimitiveMesh {
-        vertices: cube.vertices,
-        indices: cube.indices,
-    };
-
-    Mesh::Primitive(polygon)
-}
-
-fn align_to(value: u64, alignment: u64) -> u64 {
-    (value + alignment - 1) / alignment * alignment
 }
