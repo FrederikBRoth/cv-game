@@ -1,6 +1,7 @@
+use std::collections::HashSet;
+
 use crate::entity::entity::Instance;
 use crate::entity::entity::InstanceController;
-use cgmath::num_traits::float;
 use cgmath::{num_traits::pow, Vector3};
 
 #[derive(Copy, Clone)]
@@ -126,7 +127,7 @@ pub struct AnimationStep {
     animating: bool,
     speed: f32,
     animation_transition: AnimationTransition,
-    one_time_animation: bool,
+    is_static: bool,
 }
 
 impl AnimationStep {
@@ -136,7 +137,7 @@ impl AnimationStep {
         speed: f32,
         reversed: bool,
         activated: bool,
-        one_time_animation: bool,
+        is_static: bool,
         animation_transition: AnimationTransition,
     ) -> Self {
         Self {
@@ -145,7 +146,7 @@ impl AnimationStep {
             reversed,
             activated,
             speed,
-            one_time_animation,
+            is_static,
             animating: false,
             animation_transition,
         }
@@ -238,8 +239,8 @@ impl AnimationHandler {
         let mut locked = false;
         for animation in self.movement_list.iter_mut() {
             for step in animation.animations.iter_mut() {
-                if (step.one_time_animation) {
-                    locked = step.one_time_animation
+                if step.is_static {
+                    locked = step.is_static
                 }
             }
         }
@@ -273,7 +274,7 @@ impl AnimationHandler {
                     continue;
                 }
 
-                let delay = ((animation.current_pos.x + animation.current_pos.z) * 0.05);
+                let delay = (animation.current_pos.x + animation.current_pos.z) * 0.05;
                 let mut total_movement = Vector3::new(0.0, 0.0, 0.0);
                 for persistent in animation.persistent_animation.iter_mut() {
                     total_movement += persistent.animation_transition.lerp(
@@ -286,10 +287,49 @@ impl AnimationHandler {
                 instance.position = animation.current_pos - total_movement;
                 instance.bounding = animation.current_pos + animation.current_pos - total_movement;
                 animation.start = instance.position;
+                animation.grid_pos = instance.position;
             } else {
                 continue;
             };
             animation.animations.clear();
+        }
+    }
+
+    pub fn reset_instance_position_to_current_position_range(
+        &mut self,
+        instances: &mut Vec<Instance>,
+        animation_indices: Vec<usize>,
+    ) {
+        let index_set: HashSet<_> = animation_indices.iter().copied().collect();
+
+        for (i, animation) in self.movement_list.iter_mut().enumerate() {
+            if index_set.contains(&i) {
+                // Do something
+                if let Some(instance) = instances.get_mut(i) {
+                    if animation.animations.is_empty() {
+                        continue;
+                    }
+
+                    let delay = (animation.current_pos.x + animation.current_pos.z) * 0.05;
+                    let mut total_movement = Vector3::new(0.0, 0.0, 0.0);
+                    for persistent in animation.persistent_animation.iter_mut() {
+                        total_movement += persistent.animation_transition.lerp(
+                            animation.start,
+                            animation.start + persistent.movement_vector,
+                            persistent.time,
+                            delay,
+                        ) - animation.start;
+                    }
+                    instance.position = animation.current_pos - total_movement;
+                    instance.bounding =
+                        animation.current_pos + animation.current_pos - total_movement;
+                    animation.start = instance.position;
+                    animation.grid_pos = instance.position;
+                } else {
+                    continue;
+                };
+                animation.animations.clear();
+            }
         }
     }
     pub fn animate(&mut self, dt: f32) {
@@ -306,7 +346,7 @@ impl AnimationHandler {
 
             animation.time += dt;
 
-            let delay = ((animation.current_pos.x + animation.current_pos.z) * 0.05);
+            let delay = (animation.current_pos.x + animation.current_pos.z) * 0.05;
             let mut total_movement = animation.start.clone();
             for persistent in animation.persistent_animation.iter_mut() {
                 persistent.time += delta;
@@ -349,7 +389,7 @@ impl AnimationHandler {
                     step.animating = false
                 }
 
-                if step.one_time_animation && step.time == 1.0 {
+                if step.is_static && step.time == 1.0 {
                     animation.start = animation.start + step_movement;
                     animation.grid_pos = animation.start + step_movement;
                 }
@@ -359,8 +399,7 @@ impl AnimationHandler {
             total_movement += step_delta;
             animation.current_pos = total_movement;
             animation.animations.retain(|step| {
-                !((step.reversed && step.time == 0.0)
-                    || (step.one_time_animation && step.time == 1.0))
+                !((step.reversed && step.time == 0.0) || (step.is_static && step.time == 1.0))
             });
         }
     }

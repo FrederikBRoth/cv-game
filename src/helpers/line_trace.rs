@@ -1,4 +1,4 @@
-use cgmath::{EuclideanSpace, InnerSpace, Point3, Vector2, Vector3};
+use cgmath::{InnerSpace, Point3, Vector2, Vector3};
 
 use crate::entity::entity::InstanceController;
 use crate::helpers::animation::{AnimationHandler, AnimationType};
@@ -135,7 +135,7 @@ pub fn line_trace(
     let mut closest_distance = f32::MAX;
 
     for (i, instance) in state.instances.iter().enumerate() {
-        if (!instance.should_render) {
+        if !instance.should_render {
             continue;
         }
         let max = instance.position + instance.size;

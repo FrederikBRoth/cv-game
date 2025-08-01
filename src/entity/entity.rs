@@ -1,6 +1,6 @@
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use cgmath::{prelude::*, Vector2, Vector3};
-use wgpu::{util::DeviceExt, BindGroupLayout, RenderPass, TextureFormat};
+use wgpu::{util::DeviceExt, BindGroupLayout, TextureFormat};
 use winit::dpi::PhysicalSize;
 
 #[repr(C)]
@@ -226,8 +226,6 @@ impl InstanceController {
         let count_clone = Arc::clone(&self.atomic_usize);
         #[cfg(not(target_arch = "wasm32"))]
         {
-            use std::sync::atomic::Ordering;
-
             let queue = Arc::clone(&queue);
             std::thread::spawn(move || {
                 use std::sync::atomic::Ordering;

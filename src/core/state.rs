@@ -1,23 +1,9 @@
-use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
 
-use cgmath::{Vector2, Vector3};
-use wgpu::util::DeviceExt;
-use winit::dpi::PhysicalPosition;
-use winit::event::{KeyEvent, WindowEvent};
-use winit::keyboard::{Key, KeyCode, PhysicalKey};
+use winit::event::WindowEvent;
 use winit::window::Window;
 
-use crate::core::game_loop::Chunk;
-use crate::entity::entity::{
-    instances_list, instances_list_cube, make_cube_primitive, make_cube_textured,
-    InstanceController,
-};
-use crate::entity::primitive_texture::PrimitiveTexture;
-use crate::entity::texture::Texture;
-
-use super::camera::{Camera, CameraController, CameraUniform};
 use super::game_loop::Gameloop;
 // The main application state holding all GPU resources and game logic
 pub struct State {
@@ -33,11 +19,18 @@ pub struct State {
     #[allow(dead_code)]
     pub window: Arc<Window>, // Application window
     pub game_loop: Gameloop,
+    pub scroll_y: i64,
     //temp solution
     //--TODO change
 }
 
 impl State {
+    pub fn update_scroll(&mut self, y: i64) {
+        self.scroll_y = y.max(0);
+        // #[cfg(target_arch = "wasm32")]
+        println!("{:?}", self.scroll_y)
+        // log::info!("Scroll position - y: {}", y);
+    }
     // Creates a new State object, initializing all required resources
     pub async fn new(window: Arc<Window>) -> State {
         let size = window.inner_size();
@@ -145,6 +138,7 @@ impl State {
             size,
             window,
             game_loop,
+            scroll_y: 0,
         }
     }
 
@@ -181,7 +175,7 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.game_loop.camera_controller.camera_uniform]),
         );
-        self.game_loop.update(dt);
+        self.game_loop.update(dt, self.scroll_y);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

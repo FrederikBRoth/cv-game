@@ -1,7 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use cgmath::{InnerSpace, Vector2, Vector3};
-use wgpu::CommandEncoder;
+use log::warn;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{KeyEvent, WindowEvent},
@@ -9,19 +12,19 @@ use winit::{
 };
 
 use crate::{
-    core::camera::{Camera, CameraController},
+    core::camera::CameraController,
     entity::entity::{
         instances_list, instances_list_cube, make_cube_primitive, make_cube_textured,
         InstanceController, MeshType,
     },
     helpers::{
         animation::{
-            ease_in_ease_out_loop, get_height_color, AnimationHandler, AnimationPersistent,
-            AnimationStep, AnimationTransition, AnimationType, EaseInEaseOut, EaseInEaseOutLoop,
-            EaseOut,
+            AnimationHandler, AnimationPersistent, AnimationStep, AnimationTransition,
+            AnimationType, EaseInEaseOutLoop, EaseOut,
         },
-        line_trace::{aabb_sphere_intersect, line_trace, line_trace_animate_hit},
-        voxel_builder::{self, VoxelHandler},
+        line_trace::{aabb_sphere_intersect, line_trace},
+        transition::{ScrollTransitions, TransitionHandler},
+        voxel_builder::VoxelHandler,
     },
 };
 
@@ -41,6 +44,7 @@ pub struct Gameloop {
     pub elapsed_time: f32,
     pub animation_handler: AnimationHandler,
     pub voxel_helper: VoxelHandler,
+    pub transition_handler: TransitionHandler<ScrollTransitions>,
 }
 
 impl Gameloop {
@@ -53,7 +57,7 @@ impl Gameloop {
             );
         }
     }
-    pub fn update(&mut self, dt: std::time::Duration) {
+    pub fn update(&mut self, dt: std::time::Duration, scroll_y: i64) {
         let dts = dt.as_secs_f32();
         for instance_controller in self.instance_controllers.iter_mut() {
             self.animation_handler.animate(dts);
@@ -65,39 +69,91 @@ impl Gameloop {
                 // instance_controller.update_buffer(&self.queue);
                 // assuming queue: Arc<wgpu::Queue>
             }
+
+            if let Some(transition) = self.transition_handler.trigger_transition(scroll_y) {
+                match transition {
+                    ScrollTransitions::Home => {
+                        self.camera_controller.auto = true;
+                        self.camera_controller.speed = 0.4;
+                        self.camera_controller.is_right_pressed = true;
+                        print!("{:?}", transition);
+                    }
+                    ScrollTransitions::CSharp => {
+                        if self.camera_controller.auto {
+                            self.camera_controller.auto = false;
+                            self.camera_controller.speed = 1.0;
+                            self.camera_controller.is_right_pressed = false;
+                        }
+                        self.animation_handler
+                            .reset_instance_position_to_current_position(
+                                &mut instance_controller.instances,
+                            );
+                        self.voxel_helper
+                            .transition_to_object(0, &mut self.animation_handler);
+                        print!("{:?}", transition);
+                    }
+                    ScrollTransitions::CPlusPLus => {
+                        self.animation_handler
+                            .reset_instance_position_to_current_position(
+                                &mut instance_controller.instances,
+                            );
+                        self.voxel_helper
+                            .transition_to_object(1, &mut self.animation_handler);
+                        print!("{:?}", transition);
+                    }
+                    ScrollTransitions::Rust => {
+                        self.animation_handler
+                            .reset_instance_position_to_current_position(
+                                &mut instance_controller.instances,
+                            );
+
+                        self.voxel_helper
+                            .transition_to_object(2, &mut self.animation_handler);
+                        print!("{:?}", transition);
+                    }
+                    ScrollTransitions::Containerization => {
+                        self.animation_handler
+                            .reset_instance_position_to_current_position(
+                                &mut instance_controller.instances,
+                            );
+                        self.voxel_helper
+                            .transition_to_object(0, &mut self.animation_handler);
+                        print!("{:?}", transition);
+                    }
+                }
+            }
             instance_controller.update_buffer_multithreaded(Arc::clone(&self.queue));
 
             self.elapsed_time += dts;
-        }
-
-        if self.camera_controller.auto {
-            if self.elapsed_time < 5.0 {
-                return;
-            }
-            let target_chunk = Chunk { x: 0, y: 0 };
-            let animation_time = self.elapsed_time % 24.0;
-            let ready = !self.animation_handler.is_locked();
-            if let Some(controller) = self.instance_controllers.first_mut() {
+            if self.camera_controller.auto {
+                if self.elapsed_time < 5.0 {
+                    return;
+                }
+                let animation_time = self.elapsed_time % 24.0;
+                let ready = !self.animation_handler.is_locked();
                 if animation_time.floor() == 0.0 && ready {
-                    self.voxel_helper.transition_to_object(
-                        0,
-                        &mut controller.instances,
-                        &mut self.animation_handler,
-                    );
+                    self.animation_handler
+                        .reset_instance_position_to_current_position(
+                            &mut instance_controller.instances,
+                        );
+                    self.voxel_helper
+                        .transition_to_object(0, &mut self.animation_handler);
                 }
                 if animation_time.floor() == 8.0 && ready {
-                    self.voxel_helper.transition_to_object(
-                        1,
-                        &mut controller.instances,
-                        &mut self.animation_handler,
-                    );
+                    self.animation_handler
+                        .reset_instance_position_to_current_position(
+                            &mut instance_controller.instances,
+                        );
+                    self.voxel_helper
+                        .transition_to_object(1, &mut self.animation_handler);
                 }
                 if animation_time.floor() == 16.0 && ready {
-                    self.voxel_helper.transition_to_object(
-                        2,
-                        &mut controller.instances,
-                        &mut self.animation_handler,
-                    );
+                    self.animation_handler
+                        .reset_instance_position_to_current_position(
+                            &mut instance_controller.instances,
+                        );
+                    self.voxel_helper
+                        .transition_to_object(2, &mut self.animation_handler);
                 }
             }
         }
@@ -119,7 +175,7 @@ impl Gameloop {
                 KeyCode::Space => match state {
                     winit::event::ElementState::Pressed => {
                         self.camera_controller.auto = !self.camera_controller.auto;
-                        if (self.camera_controller.auto) {
+                        if self.camera_controller.auto {
                             self.camera_controller.is_right_pressed = true;
 
                             self.camera_controller.speed = 0.4;
@@ -147,9 +203,8 @@ impl Gameloop {
                 },
                 KeyCode::Home => match state {
                     winit::event::ElementState::Pressed => {
-                        let target_chunk = Chunk { x: 0, y: 0 };
-
                         if let Some(controller) = self.instance_controllers.first_mut() {
+                            self.camera_controller.auto = true;
                             self.animation_handler
                                 .reset_instance_position_to_current_position(
                                     &mut controller.instances,
@@ -161,57 +216,33 @@ impl Gameloop {
                 },
                 KeyCode::End => match state {
                     winit::event::ElementState::Pressed => {
-                        let target_chunk = Chunk { x: 0, y: 0 };
                         log::warn!("Clicked");
 
-                        if let Some(controller) = self.instance_controllers.first_mut() {
-                            self.voxel_helper.transition_to_object(
-                                0,
-                                &mut controller.instances,
-                                &mut self.animation_handler,
-                            );
-                        }
+                        self.voxel_helper
+                            .transition_to_object(0, &mut self.animation_handler);
                     }
                     _ => {}
                 },
                 KeyCode::PageUp => match state {
                     winit::event::ElementState::Pressed => {
-                        let target_chunk = Chunk { x: 0, y: 0 };
                         println!("{:?}", self.camera_controller.camera.eye);
-                        if let Some(controller) = self.instance_controllers.first_mut() {
-                            self.voxel_helper.transition_to_object(
-                                1,
-                                &mut controller.instances,
-                                &mut self.animation_handler,
-                            );
-                        }
+                        self.voxel_helper
+                            .transition_to_object(1, &mut self.animation_handler);
                     }
                     _ => {}
                 },
                 KeyCode::PageDown => match state {
                     winit::event::ElementState::Pressed => {
-                        let target_chunk = Chunk { x: 0, y: 0 };
-
-                        if let Some(controller) = self.instance_controllers.first_mut() {
-                            self.voxel_helper.transition_to_object(
-                                2,
-                                &mut controller.instances,
-                                &mut self.animation_handler,
-                            );
-                        }
+                        self.voxel_helper
+                            .transition_to_object(2, &mut self.animation_handler);
                     }
                     _ => {}
                 },
                 KeyCode::ScrollLock => match state {
                     winit::event::ElementState::Pressed => {
-                        let target_chunk = Chunk { x: 0, y: 0 };
-
                         if let Some(controller) = self.instance_controllers.first_mut() {
-                            self.voxel_helper.explode_object(
-                                &mut controller.instances,
-                                &mut self.animation_handler,
-                                25.0,
-                            );
+                            self.voxel_helper
+                                .explode_object(&mut self.animation_handler, 25.0);
                         }
                     }
                     _ => {}
@@ -219,6 +250,7 @@ impl Gameloop {
                 _ => {}
             },
             WindowEvent::MouseInput { state, button, .. } => {
+                warn!("test123");
                 match button {
                     winit::event::MouseButton::Left => {
                         match state {
@@ -231,7 +263,6 @@ impl Gameloop {
                                 );
                                 println!("{:?}", test);
                                 // line_trace(&mut self.instance_controller2, camera, &self.queue, &self.device, test);
-                                let target_chunk = Chunk { x: 0, y: 0 };
 
                                 if let Some(controller) = self.instance_controllers.first_mut() {
                                     // line_trace_cursor(
@@ -280,34 +311,8 @@ impl Gameloop {
                             );
                             println!("{:?}", test);
                             // line_trace(&mut self.instance_controller2, camera, &self.queue, &self.device, test);
-                            let target_chunk = Chunk { x: 0, y: 0 };
 
                             if let Some(controller) = self.instance_controllers.first_mut() {
-                                // line_trace_cursor(
-                                //     controller,
-                                //     &self.chunk_size,
-                                //     &self.queue,
-                                //     test,
-                                // );
-                                let animation = AnimationType::Step(AnimationStep::new(
-                                    Vector3 {
-                                        x: 0.0,
-                                        y: 1.0,
-                                        z: 0.0,
-                                    },
-                                    1.0,
-                                    true,
-                                    false,
-                                    false,
-                                    AnimationTransition::EaseInEaseOut(EaseInEaseOut),
-                                ));
-                                // line_trace_animate_hit(
-                                //     controller,
-                                //     &mut self.animation_handler,
-                                //     &self.queue,
-                                //     animation,
-                                //     test,
-                                // )
                                 if let Some(index) = line_trace(controller, test) {
                                     let sphere_radius = 5.0;
                                     let sphere_center =
@@ -372,14 +377,13 @@ impl Gameloop {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = PhysicalPosition::new(position.x as f32, position.y as f32);
-                let test = self.camera_controller.camera.screen_to_world_ray(
-                    self.cursor_position.x,
-                    self.cursor_position.y,
-                    screen.width as f32,
-                    screen.height as f32,
-                );
+                // let test = self.camera_controller.camera.screen_to_world_ray(
+                //     self.cursor_position.x,
+                //     self.cursor_position.y,
+                //     screen.width as f32,
+                //     screen.height as f32,
+                // );
                 // line_trace(&mut self.instance_controller2, camera, &self.queue, &self.device, test);
-                let target_chunk = Chunk { x: 0, y: 0 };
 
                 // if let Some(controller) = self.chunk_map.get_mut(&target_chunk) {
                 //     if let Some(i) = line_trace(controller, test) {
@@ -387,6 +391,7 @@ impl Gameloop {
                 //     }
                 // }
             }
+
             _ => {}
         }
     }
@@ -484,6 +489,16 @@ impl Gameloop {
         // let animation_enums = vec![];
         let animation_handler =
             AnimationHandler::new(&instance_controllers.first().unwrap(), animation_enums);
+
+        let mut transition_map = BTreeMap::new();
+        transition_map.insert(500, ScrollTransitions::Home);
+
+        transition_map.insert(1000, ScrollTransitions::CSharp);
+        transition_map.insert(1500, ScrollTransitions::Rust);
+        transition_map.insert(2000, ScrollTransitions::CPlusPLus);
+        transition_map.insert(2500, ScrollTransitions::Containerization);
+
+        let transition_handler = TransitionHandler::new(transition_map);
         Gameloop {
             name,
             device,
@@ -494,6 +509,7 @@ impl Gameloop {
             elapsed_time: 0.0,
             voxel_helper: VoxelHandler::new(),
             animation_handler,
+            transition_handler,
         }
     }
 }

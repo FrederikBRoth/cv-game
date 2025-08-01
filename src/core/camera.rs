@@ -1,5 +1,5 @@
 use cgmath::{EuclideanSpace, InnerSpace, Point3, SquareMatrix, Vector3, Vector4};
-use wgpu::{hal::dx12::BindGroup, util::DeviceExt, BindGroupLayout, Device, Queue};
+use wgpu::{util::DeviceExt, BindGroupLayout, Device};
 use winit::{
     dpi::PhysicalSize,
     event::{ElementState, KeyEvent, WindowEvent},

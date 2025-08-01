@@ -5,10 +5,10 @@ use crate::helpers::animation::{
     AnimationHandler, AnimationStep, AnimationTransition, EaseInEaseOut,
 };
 use crate::{entity::entity::Instance, helpers::animation::AnimationType};
-use cgmath::Vector3;
-use dot_vox::{load, load_bytes};
+use cgmath::{MetricSpace, Vector3};
+use dot_vox::load_bytes;
+use rand::rng;
 use rand::seq::SliceRandom;
-use rand::{rng, thread_rng};
 
 pub struct Object {
     pub cubes: Vec<Vector3<f32>>,
@@ -57,32 +57,22 @@ impl VoxelHandler {
         }
     }
 
-    pub fn explode_object(
-        &mut self,
-        instances: &mut Vec<Instance>,
-        animation_handler: &mut AnimationHandler,
-        amplify: f32,
-    ) {
-        self.transition_to_object_base(
-            self.current_object,
-            instances,
-            animation_handler,
-            amplify,
-            false,
-        );
+    pub fn explode_object(&mut self, animation_handler: &mut AnimationHandler, amplify: f32) {
+        self.transition_to_object_base(self.current_object, animation_handler, amplify, false);
     }
-    pub fn transition_to_object(
+    pub fn transition_to_object(&mut self, index: usize, animation_handler: &mut AnimationHandler) {
+        self.transition_to_object_base(index, animation_handler, 1.0, true);
+    }
+    pub fn transition_to_object_2(
         &mut self,
         index: usize,
-        instances: &mut Vec<Instance>,
         animation_handler: &mut AnimationHandler,
     ) {
-        self.transition_to_object_base(index, instances, animation_handler, 1.0, true);
+        self.transition_to_object_base(index, animation_handler, 1.0, false);
     }
     fn transition_to_object_base(
         &mut self,
         index: usize,
-        instances: &mut Vec<Instance>,
         animation_handler: &mut AnimationHandler,
         amplify: f32,
         is_onetime: bool,
@@ -91,7 +81,7 @@ impl VoxelHandler {
         let mut current_cubes = self.current_cubes.clone();
         let mut new_current_cubes: Vec<usize> = vec![];
         if let Some(object) = self.get_object(index) {
-            if object.cubes.len() > instances.len() {
+            if object.cubes.len() > animation_handler.movement_list.len() {
                 println!("Object too large to show");
                 return;
             }
@@ -148,13 +138,13 @@ impl VoxelHandler {
                 animation_handler.set_animation_state(instance_index, true);
             }
             let instance_indices_remaining: HashSet<usize> =
-                current_cubes.iter().cloned().collect();
+                new_current_cubes.iter().cloned().collect();
 
             // Filter instance_indices to exclude anything in cubes_set
             let remaining_indices: Vec<usize> = instance_indices_in_order
                 .clone()
                 .into_iter()
-                .filter(|i| instance_indices_remaining.contains(i))
+                .filter(|i| !instance_indices_remaining.contains(i))
                 .collect();
 
             let mut circle = fibonacci_sphere(remaining_indices.clone().len(), 750.0);
@@ -163,8 +153,16 @@ impl VoxelHandler {
                 let animation = animation_handler.movement_list.get(i).unwrap();
 
                 let point = circle.pop().unwrap();
-                let movement_vector = Vector3::new(point.x, point.y, point.z);
-                let movement_vector = movement_vector - animation.current_pos;
+                let mut movement_vector = Vector3::new(0.0, 0.0, 0.0);
+                if animation.grid_pos.distance(Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                }) <= 500.0
+                {
+                    movement_vector = Vector3::new(point.x, point.y, point.z);
+                    movement_vector = movement_vector - animation.grid_pos;
+                }
                 let animation = AnimationType::Step(AnimationStep::new(
                     movement_vector,
                     0.25,
