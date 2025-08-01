@@ -1,3 +1,5 @@
+use log::warn;
+use spin_sleep::SpinSleeper;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -6,33 +8,38 @@ use winit::{
     window::{Window, WindowId},
 };
 
+use crate::core::state::State;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::{closure::Closure, JsCast};
 
-use crate::core::state::State;
-
+pub enum UserEvent {
+    StateEvent(State),
+    ScrollPosition { x: f64, y: f64 },
+}
 // #[derive(Default)]
 pub struct App {
     #[cfg(target_arch = "wasm32")]
-    proxy: Option<winit::event_loop::EventLoopProxy<State>>,
+    proxy: Option<winit::event_loop::EventLoopProxy<UserEvent>>,
     state: Option<State>,
-    last_time: instant::Instant,
+    last_time: web_time::Instant,
 }
 
 impl App {
-    pub fn new(#[cfg(target_arch = "wasm32")] event_loop: &EventLoop<State>) -> Self {
+    pub fn new(#[cfg(target_arch = "wasm32")] event_loop: &EventLoop<UserEvent>) -> Self {
         #[cfg(target_arch = "wasm32")]
         let proxy = Some(event_loop.create_proxy());
         Self {
             state: None,
             #[cfg(target_arch = "wasm32")]
             proxy,
-            last_time: instant::Instant::now(),
+            last_time: web_time::Instant::now(),
         }
     }
 }
 
-impl ApplicationHandler<State> for App {
+impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         #[allow(unused_mut)]
         let mut window_attributes = Window::default_attributes();
@@ -56,16 +63,19 @@ impl ApplicationHandler<State> for App {
         #[cfg(target_arch = "wasm32")]
         {
             if let Some(proxy) = self.proxy.take() {
+                let proxy_clone = proxy.clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    assert!(proxy
+                    let state = State::new(window).await;
+                    assert!(proxy_clone
                         .send_event(
-                            State::new(window).await // .expect("Unable to create canvas!!!")
+                            UserEvent::StateEvent(state) // .expect("Unable to create canvas!!!")
                         )
                         .is_ok())
                 });
+
+                setup_scroll_listener(proxy);
             }
         }
-
         #[cfg(not(target_arch = "wasm32"))]
         {
             let state = pollster::block_on(State::new(window.clone()));
@@ -74,13 +84,25 @@ impl ApplicationHandler<State> for App {
     }
 
     #[allow(unused_mut)]
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut event: State) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            event.window.request_redraw();
-            event.resize(event.window.inner_size());
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut event: UserEvent) {
+        match event {
+            UserEvent::StateEvent(mut state) => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    state.window.request_redraw();
+                    state.resize(state.window.inner_size());
+                }
+                self.state = Some(state);
+                warn!("test")
+            }
+            UserEvent::ScrollPosition { x, y } =>
+            {
+                #[cfg(target_arch = "wasm32")]
+                if let Some(state) = &mut self.state {
+                    state.update_scroll(y as i64);
+                }
+            }
         }
-        self.state = Some(event);
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let state = match &mut self.state {
@@ -96,7 +118,8 @@ impl ApplicationHandler<State> for App {
             }
             WindowEvent::RedrawRequested => {
                 let dt = self.last_time.elapsed();
-                self.last_time = instant::Instant::now();
+                self.last_time = web_time::Instant::now();
+                println!("{:?}", dt);
                 state.update(dt);
                 state.render().unwrap();
             }
@@ -105,11 +128,45 @@ impl ApplicationHandler<State> for App {
                 // here as this event is always followed up by redraw request.
                 state.resize(size);
             }
+
+            WindowEvent::MouseWheel {
+                device_id,
+                delta,
+                phase,
+            } => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    match delta {
+                        MouseScrollDelta::LineDelta(_, y) => {
+                            state.update_scroll(state.scroll_y - y as i64 * 50);
+                        }
+                        _ => {}
+                    }
+                }
+            }
             _ => (),
         }
     }
 }
+#[cfg(target_arch = "wasm32")]
+fn setup_scroll_listener(proxy: winit::event_loop::EventLoopProxy<UserEvent>) {
+    let window = wgpu::web_sys::window().unwrap();
+    let window_clone = window.clone();
 
+    let closure = Closure::<dyn FnMut(_)>::new(move |_event: wgpu::web_sys::Event| {
+        let x = window_clone.scroll_x().unwrap_or(0.0);
+        let y = window_clone.scroll_y().unwrap_or(0.0);
+
+        // Send a custom event with the scroll data to your app
+        let _ = proxy.send_event(UserEvent::ScrollPosition { x, y });
+    });
+
+    window
+        .add_event_listener_with_callback("scroll", closure.as_ref().unchecked_ref())
+        .unwrap();
+
+    closure.forget();
+}
 pub fn run() -> anyhow::Result<()> {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -120,7 +177,7 @@ pub fn run() -> anyhow::Result<()> {
         console_log::init_with_level(log::Level::Info).unwrap_throw();
     }
 
-    let event_loop = EventLoop::with_user_event().build()?;
+    let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     let mut app = App::new(
         #[cfg(target_arch = "wasm32")]
         &event_loop,
