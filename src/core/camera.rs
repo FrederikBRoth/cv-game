@@ -6,7 +6,26 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
-use crate::entity::entity::OPENGL_TO_WGPU_MATRIX;
+use crate::{entity::entity::OPENGL_TO_WGPU_MATRIX, helpers::animation::EaseOut};
+
+pub struct CameraAnimator {
+    pub animating: bool,
+    pub time: f32,
+    pub start_eye: Point3<f32>,
+    pub end_eye: Point3<f32>,
+    pub start_target: Point3<f32>,
+    pub end_target: Point3<f32>,
+    pub aspect_ratio_limit: f32,
+}
+
+impl CameraAnimator {
+    pub fn lerp(&self) -> (Point3<f32>, Point3<f32>) {
+        let lerp_value = EaseOut::ease_out_cubic(self.time);
+        let eye_anim = (self.start_eye + (self.end_eye - self.start_eye) * lerp_value);
+        let target_anim = (self.start_target + (self.end_target - self.start_target) * lerp_value);
+        (eye_anim, target_anim)
+    }
+}
 
 pub struct Camera {
     pub eye: cgmath::Point3<f32>,
@@ -16,6 +35,7 @@ pub struct Camera {
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
+    pub camera_animator: CameraAnimator,
 }
 
 impl Camera {
@@ -78,17 +98,20 @@ impl Camera {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
+    view_position: [f32; 4],
     view_proj: [[f32; 4]; 4],
 }
 
 impl CameraUniform {
     pub fn new() -> Self {
         Self {
+            view_position: [0.0; 4],
             view_proj: cgmath::Matrix4::identity().into(),
         }
     }
 
     pub fn update_view_proj(&mut self, camera: &Camera) {
+        self.view_position = camera.eye.to_homogeneous().into();
         self.view_proj = (OPENGL_TO_WGPU_MATRIX * camera.build_view_projection_matrix()).into();
     }
 }
@@ -111,14 +134,26 @@ pub struct CameraController {
 
 impl CameraController {
     pub fn new(speed: f32, screen_size: PhysicalSize<u32>, device: &Device) -> Self {
+        let eye = Point3::new(-120.0, 90.0, -120.0);
+        let target = Point3::new(20.0, 25.0, 20.0);
+
         let camera = Camera {
-            eye: (-100.0, 140.0, -100.0).into(),
-            target: (12.5, 30.0, 12.5).into(),
+            eye,
+            target,
             up: cgmath::Vector3::unit_y(),
             aspect: screen_size.width as f32 / screen_size.height as f32,
-            fovy: 20.0,
+            fovy: 25.0,
             znear: 0.1,
-            zfar: 1.0,
+            zfar: 100.0,
+            camera_animator: CameraAnimator {
+                animating: false,
+                time: 0.0,
+                start_eye: eye,
+                end_eye: eye,
+                start_target: target,
+                end_target: target,
+                aspect_ratio_limit: 0.8,
+            },
         };
 
         let mut camera_uniform = CameraUniform::new();
@@ -134,7 +169,7 @@ impl CameraController {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -250,6 +285,50 @@ impl CameraController {
                 self.camera.target - (forward - right * self.speed).normalize() * forward_mag;
         }
 
+        // if self.is_right_pressed {
+        //     // Rescale the distance between the target and eye so
+        //     // that it doesn't change. The eye therefore still
+        //     // lies on the circle made by the target and eye.
+        //     self.camera.eye -= right * self.speed;
+        //     self.camera.target -= right * self.speed;
+        // }
+        // if self.is_left_pressed {
+        //     self.camera.eye += right * self.speed;
+        //     self.camera.target += right * self.speed;
+        // }
+
         self.camera_uniform.update_view_proj(&self.camera);
+    }
+
+    pub fn animate_camera(&mut self, dt: f32) {
+        if !self.camera.camera_animator.animating
+            || self.camera.camera_animator.aspect_ratio_limit > self.camera.aspect
+        {
+            return;
+        }
+        self.camera.camera_animator.time += dt;
+        self.camera.camera_animator.time = self.camera.camera_animator.time.clamp(0.0, 1.0);
+
+        let lerped = self.camera.camera_animator.lerp();
+        self.camera.eye = lerped.0;
+        self.camera.target = lerped.1;
+        if self.camera.camera_animator.time >= 1.0 {
+            self.camera.camera_animator.animating = false;
+        }
+    }
+
+    pub fn add_animation(&mut self, animation_point: (Point3<i32>, Point3<i32>)) {
+        // let factor = (self.camera.aspect - 1.0).max(0.0);
+        let factor = 1.0;
+        let end_eye = animation_point.0.cast().unwrap();
+        let end_target = animation_point.1.cast().unwrap();
+        self.camera.camera_animator.end_eye =
+            Point3::new(end_eye.x * factor, end_eye.y, end_eye.z * factor);
+        self.camera.camera_animator.end_target =
+            Point3::new(end_target.x * factor, end_target.y, end_target.z * factor);
+        self.camera.camera_animator.start_eye = self.camera.eye;
+        self.camera.camera_animator.start_target = self.camera.target;
+        self.camera.camera_animator.animating = true;
+        self.camera.camera_animator.time = 0.0;
     }
 }
