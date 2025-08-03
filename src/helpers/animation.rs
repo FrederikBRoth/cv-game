@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::entity::entity::Instance;
 use crate::entity::entity::InstanceController;
 use cgmath::{num_traits::pow, Vector3};
@@ -164,6 +162,7 @@ pub struct Animation {
 
     animations: Vec<AnimationStep>,
     color: Vector3<f32>,
+    animate_color: bool,
 }
 
 pub struct AnimationHandler {
@@ -205,6 +204,7 @@ impl AnimationHandler {
                             y: 0.0,
                             z: 0.0,
                         },
+                        animate_color: true,
                         time: 0.0,
                     })
                     .collect()
@@ -217,6 +217,19 @@ impl AnimationHandler {
     }
     pub fn enable(&mut self) {
         self.disabled = false;
+    }
+
+    pub fn set_manual_animation_color(&mut self, index: usize, color: Vector3<f32>) {
+        if let Some(animation) = self.movement_list.get_mut(index) {
+            animation.animate_color = false;
+            animation.color = color;
+        }
+    }
+
+    pub fn set_animated_color(&mut self, index: usize) {
+        if let Some(animation) = self.movement_list.get_mut(index) {
+            animation.animate_color = true;
+        }
     }
 
     pub fn set_animation(&mut self, index: usize, animation_type: AnimationType) {
@@ -295,53 +308,11 @@ impl AnimationHandler {
         }
     }
 
-    pub fn reset_instance_position_to_current_position_range(
-        &mut self,
-        instances: &mut Vec<Instance>,
-        animation_indices: Vec<usize>,
-    ) {
-        let index_set: HashSet<_> = animation_indices.iter().copied().collect();
-
-        for (i, animation) in self.movement_list.iter_mut().enumerate() {
-            if index_set.contains(&i) {
-                // Do something
-                if let Some(instance) = instances.get_mut(i) {
-                    if animation.animations.is_empty() {
-                        continue;
-                    }
-
-                    let delay = (animation.current_pos.x + animation.current_pos.z) * 0.05;
-                    let mut total_movement = Vector3::new(0.0, 0.0, 0.0);
-                    for persistent in animation.persistent_animation.iter_mut() {
-                        total_movement += persistent.animation_transition.lerp(
-                            animation.start,
-                            animation.start + persistent.movement_vector,
-                            persistent.time,
-                            delay,
-                        ) - animation.start;
-                    }
-                    instance.position = animation.current_pos - total_movement;
-                    instance.bounding =
-                        animation.current_pos + animation.current_pos - total_movement;
-                    animation.start = instance.position;
-                    animation.grid_pos = instance.position;
-                } else {
-                    continue;
-                };
-                animation.animations.clear();
-            }
-        }
-    }
     pub fn animate(&mut self, dt: f32) {
         if self.disabled {
             return;
         }
-        for (i, animation) in self
-            .movement_list
-            .iter_mut()
-            .filter(|ani| ani.activated)
-            .enumerate()
-        {
+        for animation in self.movement_list.iter_mut().filter(|ani| ani.activated) {
             let delta = dt;
 
             animation.time += dt;
@@ -358,9 +329,12 @@ impl AnimationHandler {
                 ) - animation.start;
             }
             let lerp = 1.0 * ease_in_ease_out_loop(animation.time, delay as f32, 1.0);
-            animation.color = get_height_color(lerp);
+            if animation.animate_color {
+                animation.color = get_height_color(lerp);
+            }
+
             let mut step_delta = Vector3::new(0.0, 0.0, 0.0);
-            for (step_i, step) in animation.animations.iter_mut().enumerate() {
+            for step in animation.animations.iter_mut() {
                 let mut step_movement = Vector3::new(0.0, 0.0, 0.0);
                 if !step.activated {
                     continue;

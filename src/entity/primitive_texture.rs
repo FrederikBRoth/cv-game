@@ -1,5 +1,6 @@
 use winit::dpi::PhysicalSize;
 
+#[derive(Clone)]
 pub struct PrimitiveTexture {
     #[allow(unused)]
     pub texture: wgpu::Texture,
@@ -24,7 +25,7 @@ impl PrimitiveTexture {
             label: Some("Depth Texture"),
             size,
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: 4,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float, // or Depth32Float if stencil not needed
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,

@@ -1,45 +1,64 @@
-use std::collections::HashSet;
-use std::f32::consts::PI;
-
+use crate::helpers::animation::AnimationType;
 use crate::helpers::animation::{
     AnimationHandler, AnimationStep, AnimationTransition, EaseInEaseOut,
 };
-use crate::{entity::entity::Instance, helpers::animation::AnimationType};
 use cgmath::{MetricSpace, Vector3};
 use dot_vox::load_bytes;
 use rand::rng;
 use rand::seq::SliceRandom;
+use std::collections::{HashMap, HashSet};
+use std::f32::consts::PI;
 
 pub struct Object {
     pub cubes: Vec<Vector3<f32>>,
+    pub color: Vec<Vector3<f32>>,
 }
 
-pub struct VoxelHandler {
+pub struct VoxelHandler<T: Eq + std::hash::Hash> {
     pub voxels: Vec<Object>,
+    pub voxels_map: HashMap<T, Object>,
+    pub current_voxel: Option<T>,
     pub current_cubes: Vec<usize>,
     pub current_object: usize,
 }
-impl VoxelHandler {
+impl<T: Eq + std::hash::Hash + Clone> VoxelHandler<T> {
     pub fn new() -> Self {
         Self {
             voxels: vec![],
+            voxels_map: HashMap::new(),
             current_cubes: vec![],
-            current_object: 1,
+            current_object: 0,
+            current_voxel: None,
         }
     }
 
-    pub fn add_voxel(&mut self, path: &[u8]) {
+    pub fn add_voxel(&mut self, path: &[u8], voxel_type: T) {
         match load_bytes(path) {
             Ok(scene) => {
+                let palette = scene.palette.clone();
                 for model in scene.models {
                     let new_voxel = Object {
                         cubes: model
                             .voxels
+                            .clone()
                             .iter()
                             .map(|v| Vector3::new(v.x as f32, v.z as f32, v.y as f32))
                             .collect(),
+                        color: model
+                            .voxels
+                            .clone()
+                            .iter()
+                            .map(|v| {
+                                let color = palette.get(v.i as usize).unwrap();
+                                Vector3::new(
+                                    get_srgb(color.r),
+                                    get_srgb(color.g),
+                                    get_srgb(color.b),
+                                )
+                            })
+                            .collect(),
                     };
-                    self.voxels.push(new_voxel);
+                    self.voxels_map.insert(voxel_type.clone(), new_voxel);
                 }
             }
             Err(err) => {
@@ -49,8 +68,8 @@ impl VoxelHandler {
         }
     }
 
-    pub fn get_object(&self, index: usize) -> Option<&Object> {
-        if let Some(object) = &self.voxels.get(index) {
+    pub fn get_object(&self, current_object: T) -> Option<&Object> {
+        if let Some(object) = &self.voxels_map.get(&current_object) {
             Some(*&object)
         } else {
             None
@@ -58,29 +77,26 @@ impl VoxelHandler {
     }
 
     pub fn explode_object(&mut self, animation_handler: &mut AnimationHandler, amplify: f32) {
-        self.transition_to_object_base(self.current_object, animation_handler, amplify, false);
+        let current_voxel = self.current_voxel.as_mut().unwrap().clone();
+        self.transition_to_object_base(current_voxel, animation_handler, amplify, false, false);
     }
-    pub fn transition_to_object(&mut self, index: usize, animation_handler: &mut AnimationHandler) {
-        self.transition_to_object_base(index, animation_handler, 1.0, true);
+    pub fn transition_to_object(&mut self, object: T, animation_handler: &mut AnimationHandler) {
+        self.transition_to_object_base(object.clone(), animation_handler, 1.0, true, false);
     }
-    pub fn transition_to_object_2(
-        &mut self,
-        index: usize,
-        animation_handler: &mut AnimationHandler,
-    ) {
-        self.transition_to_object_base(index, animation_handler, 1.0, false);
-    }
+
     fn transition_to_object_base(
         &mut self,
-        index: usize,
+        object: T,
         animation_handler: &mut AnimationHandler,
         amplify: f32,
         is_onetime: bool,
+        use_object_color: bool,
     ) {
-        self.current_object = index;
+        self.current_voxel = Some(object.clone());
         let mut current_cubes = self.current_cubes.clone();
         let mut new_current_cubes: Vec<usize> = vec![];
-        if let Some(object) = self.get_object(index) {
+
+        if let Some(object) = self.get_object(object.clone()) {
             if object.cubes.len() > animation_handler.movement_list.len() {
                 println!("Object too large to show");
                 return;
@@ -133,6 +149,11 @@ impl VoxelHandler {
                     is_onetime,
                     AnimationTransition::EaseInEaseOut(EaseInEaseOut),
                 ));
+                if use_object_color {
+                    let &color = object.color.get(i).unwrap();
+
+                    animation_handler.set_manual_animation_color(instance_index, color);
+                }
                 animation_handler.set_animation(instance_index, animation);
                 // animation_handler.reset_animation_time(index);
                 animation_handler.set_animation_state(instance_index, true);
@@ -171,6 +192,8 @@ impl VoxelHandler {
                     is_onetime,
                     AnimationTransition::EaseInEaseOut(EaseInEaseOut),
                 ));
+
+                animation_handler.set_animated_color(i);
                 animation_handler.set_animation(i, animation);
                 // animation_handler.reset_animation_time(index);
                 animation_handler.set_animation_state(i, true);
@@ -201,4 +224,8 @@ fn fibonacci_sphere(points: usize, scalar: f32) -> Vec<Vector3<f32>> {
     }
 
     vecs
+}
+
+fn get_srgb(color: u8) -> f32 {
+    ((color as f32 / 255 as f32 + 0.055) / 1.055).powf(2.4)
 }

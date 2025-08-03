@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use cgmath::{prelude::*, Vector2, Vector3};
-use wgpu::{util::DeviceExt, BindGroupLayout, TextureFormat};
+use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, TextureFormat};
 use winit::dpi::PhysicalSize;
 
 #[repr(C)]
@@ -20,12 +20,14 @@ use winit::dpi::PhysicalSize;
 pub struct PrimitiveVertex {
     pub position: [f32; 3],
     pub color: [f32; 3],
+    pub normal: [f32; 3],
 }
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TexturedVertex {
     pub position: [f32; 3],
     pub tex_coords: [f32; 2],
+    pub normal: [f32; 3],
 }
 impl TexturedVertex {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -42,6 +44,11 @@ impl TexturedVertex {
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
                 },
             ],
@@ -64,6 +71,11 @@ impl PrimitiveVertex {
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
+                    shader_location: 2,
                     format: wgpu::VertexFormat::Float32x3,
                 },
             ],
@@ -178,7 +190,7 @@ impl InstanceController {
         );
     }
 
-    pub fn remove_instance(&mut self, index: usize, queue: &wgpu::Queue) {
+    pub fn remove_instance(&mut self, index: usize, _queue: &wgpu::Queue) {
         if let Some(instance) = self.instances.get_mut(index) {
             instance.should_render = false;
             self.count -= 1;
@@ -266,46 +278,13 @@ impl InstanceController {
             bytemuck::cast_slice(&data),
         );
     }
-    pub fn render(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        camera_bind: wgpu::BindGroup,
-    ) {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 0.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: {
-                Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.entity_buffers.depth_texture,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                })
-            },
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
+    pub fn render(&mut self, render_pass: &mut wgpu::RenderPass, camera_bind: wgpu::BindGroup) {
         render_pass.set_bind_group(0, &camera_bind, &[]);
+        render_pass.set_bind_group(1, &self.render.light_bind_group, &[]);
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_pipeline(&self.render.pipeline);
         if let Some(diffuse) = &self.render.diffuse {
-            render_pass.set_bind_group(1, diffuse, &[]);
+            render_pass.set_bind_group(2, diffuse, &[]);
         }
         // render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
         // for polygon in &self.entity_buffer {
@@ -326,27 +305,6 @@ impl InstanceController {
             .filter(|instance| instance.should_render) // only include visible instances
             .map(Instance::to_raw)
             .collect()
-    }
-
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>, device: &wgpu::Device) {
-        match self.entity_buffers.mesh_type {
-            MeshType::Primitive => {
-                self.entity_buffers.depth_texture = PrimitiveTexture::create_depth_texture(
-                    device,
-                    &new_size,
-                    "depth_texture_primitive",
-                )
-                .view
-            }
-            MeshType::Textured => {
-                self.entity_buffers.depth_texture = PrimitiveTexture::create_depth_texture(
-                    device,
-                    &new_size,
-                    "depth_texture_primitive",
-                )
-                .view
-            }
-        }
     }
 }
 
@@ -369,6 +327,7 @@ impl Instance {
                 * self.scale)
                 .into(),
             color: cgmath::Vector3::from(self.color).into(),
+            normal: cgmath::Matrix3::from(self.rotation).into(),
         }
     }
 }
@@ -379,6 +338,7 @@ pub struct InstanceRaw {
     #[allow(dead_code)]
     pub model: [[f32; 4]; 4],
     pub color: [f32; 3],
+    pub normal: [[f32; 3]; 3],
 }
 
 impl InstanceRaw {
@@ -420,6 +380,21 @@ impl InstanceRaw {
                     shader_location: 9,
                     format: wgpu::VertexFormat::Float32x3,
                 },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
+                    shader_location: 10,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
+                    shader_location: 11,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 25]>() as wgpu::BufferAddress,
+                    shader_location: 12,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
             ],
         }
     }
@@ -428,7 +403,6 @@ impl InstanceRaw {
 pub struct MeshBuffer {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub depth_texture: wgpu::TextureView,
     pub num_indices: u32,
     pub mesh_type: MeshType,
 }
@@ -440,6 +414,7 @@ pub enum MeshType {
 
 pub struct Renderer {
     pub pipeline: wgpu::RenderPipeline,
+    pub light_bind_group: wgpu::BindGroup,
     pub diffuse: Option<wgpu::BindGroup>,
 }
 pub struct TexturedMesh {
@@ -456,10 +431,10 @@ impl TexturedMesh {
         format: TextureFormat,
         queue: &wgpu::Queue,
         camera_bind_group_layout: BindGroupLayout,
+        light_bind_group_layout: BindGroupLayout,
+        light_bind_group: BindGroup,
         size: PhysicalSize<u32>,
     ) -> (MeshBuffer, Renderer) {
-        let depth_texture = Texture::create_depth_texture(&device, &size, "depth_texture");
-
         let diffuse_bytes = &self.texture_bytes;
         let diffuse_texture =
             Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
@@ -507,7 +482,11 @@ impl TexturedMesh {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &texture_bind_group_layout],
+                bind_group_layouts: &[
+                    &camera_bind_group_layout,
+                    &light_bind_group_layout,
+                    &texture_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -569,13 +548,13 @@ impl TexturedMesh {
                 contents: bytemuck::cast_slice(&self.indices),
                 usage: wgpu::BufferUsages::INDEX,
             }),
-            depth_texture: depth_texture.view,
             num_indices: self.indices.len() as u32,
             mesh_type: MeshType::Textured,
         };
 
         let render = Renderer {
             diffuse: Some(diffuse_bind_group),
+            light_bind_group,
             pipeline: render_pipeline,
         };
 
@@ -593,18 +572,20 @@ impl PrimitiveMesh {
         device: &wgpu::Device,
         shader: &wgpu::ShaderModule,
         format: TextureFormat,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
         camera_bind_group_layout: BindGroupLayout,
+        light_bind_group_layout: BindGroupLayout,
+        light_bind_group: BindGroup,
         size: PhysicalSize<u32>,
     ) -> (MeshBuffer, Renderer) {
-        let depth_texture =
-            PrimitiveTexture::create_depth_texture(&device, &size, "depth_texture_prim");
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout],
+                bind_group_layouts: &[&camera_bind_group_layout, &light_bind_group_layout],
                 push_constant_ranges: &[],
             });
+        let test = wgpu::DepthBiasState::default();
+        println!("{:?}", test);
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -641,12 +622,17 @@ impl PrimitiveMesh {
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less, // standard depth test
                 stencil: wgpu::StencilState::default(),     // no stencil operations
-                bias: wgpu::DepthBiasState::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 5,
+                    slope_scale: 0.075,
+                    clamp: 0.1,
+                },
             }),
+            // depth_stencil: None,
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
-                alpha_to_coverage_enabled: false,
+                alpha_to_coverage_enabled: true,
             },
             // If the pipeline will be used with a multiview render pass, this
             // indicates how many array layers the attachments will have.
@@ -666,16 +652,93 @@ impl PrimitiveMesh {
                 contents: bytemuck::cast_slice(&self.indices),
                 usage: wgpu::BufferUsages::INDEX,
             }),
-            depth_texture: depth_texture.view,
             num_indices: self.indices.len() as u32,
             mesh_type: MeshType::Primitive,
         };
         let renderer = Renderer {
             pipeline: render_pipeline,
+            light_bind_group,
             diffuse: None,
         };
 
         (mb, renderer)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LightUniform {
+    position: [f32; 3],
+    // Due to uniforms requiring 16 byte (4 float) spacing, we need to use a padding field here
+    _padding: u32,
+    color: [f32; 3],
+    // Due to uniforms requiring 16 byte (4 float) spacing, we need to use a padding field here
+    _padding2: u32,
+}
+
+pub struct Light {
+    pub position: Vector3<f32>,
+    color: Vector3<f32>,
+    pub instance_controller: Option<InstanceController>,
+    pub light_buffer: wgpu::Buffer,
+    pub light_bind_group_layout: wgpu::BindGroupLayout,
+    pub light_bind_group: wgpu::BindGroup,
+}
+
+impl Light {
+    pub fn new(position: Vector3<f32>, color: Vector3<f32>, device: &wgpu::Device) -> Self {
+        let uniform = LightUniform {
+            position: cgmath::Vector3::from(position.clone()).into(),
+            _padding: 0,
+            color: cgmath::Vector3::from(color.clone()).into(),
+            _padding2: 0,
+        };
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light VB"),
+            contents: bytemuck::cast_slice(&[uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let light_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: None,
+            });
+
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &light_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: light_buffer.as_entire_binding(),
+            }],
+            label: None,
+        });
+
+        Self {
+            position,
+            color,
+            light_buffer,
+            light_bind_group_layout,
+            light_bind_group,
+            instance_controller: None,
+        }
+    }
+
+    pub fn to_raw(&self) -> LightUniform {
+        LightUniform {
+            position: cgmath::Vector3::from(self.position).into(),
+            _padding: 0,
+            color: cgmath::Vector3::from(self.color).into(),
+            _padding2: 0,
+        }
     }
 }
 
@@ -698,10 +761,6 @@ pub fn make_cube_primitive() -> PrimitiveMesh {
     };
 
     polygon
-}
-
-fn align_to(value: u64, alignment: u64) -> u64 {
-    (value + alignment - 1) / alignment * alignment
 }
 
 pub fn instances_list(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Instance> {
@@ -775,6 +834,28 @@ pub fn instances_list_cube(chunk: Chunk, chunk_size: Vector3<u32>) -> Vec<Instan
         .collect::<Vec<_>>()
 }
 
+pub fn instance_cube(position: Vector3<f32>) -> Instance {
+    let rotation = if position.is_zero() {
+        // this is needed so an object at (0, 0, 0) won't get scaled to zero
+        // as Quaternions can effect scale if they're not created correctly
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+    } else {
+        cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0))
+    };
+    let default_color = cgmath::Vector3::new(1.0, 0.0, 0.0);
+    let default_size = cgmath::Vector3::new(1.0, 1.0, 1.0);
+    let default_bounding = default_size + position;
+
+    Instance {
+        position,
+        rotation,
+        scale: 0.5,
+        should_render: true,
+        color: default_color,
+        size: default_size,
+        bounding: default_bounding,
+    }
+}
 pub fn instances_list_circle(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Instance> {
     let center = (chunk_size.x / 2, chunk_size.y / 2);
     let radius = center.0 as i32;

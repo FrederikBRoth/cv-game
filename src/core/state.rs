@@ -1,8 +1,12 @@
 use std::iter;
 use std::sync::Arc;
 
+use cgmath::Point3;
 use winit::event::WindowEvent;
 use winit::window::Window;
+
+use crate::entity::primitive_texture::PrimitiveTexture;
+use crate::entity::texture::Texture;
 
 use super::game_loop::Gameloop;
 // The main application state holding all GPU resources and game logic
@@ -20,6 +24,7 @@ pub struct State {
     pub window: Arc<Window>, // Application window
     pub game_loop: Gameloop,
     pub scroll_y: i64,
+    pub depth_texture: Texture,
     //temp solution
     //--TODO change
 }
@@ -103,7 +108,8 @@ impl State {
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
-
+        let depth_texture =
+            Texture::create_depth_texture(&device, &size, "depth_texture_primitive");
         // Setup camera
 
         // Create uniform buffer for camera
@@ -118,14 +124,6 @@ impl State {
             surface_format,
         );
 
-        let test = include_bytes!("../../src/test.vox");
-        let castle = include_bytes!("../../src/castle.vox");
-        let chr_knight = include_bytes!("../../src/chr_knight.vox");
-
-        game_loop.voxel_helper.add_voxel(test);
-        game_loop.voxel_helper.add_voxel(castle);
-        game_loop.voxel_helper.add_voxel(chr_knight);
-
         log::warn!("Done");
 
         // Return initialized State
@@ -138,6 +136,7 @@ impl State {
             size,
             window,
             game_loop,
+            depth_texture,
             scroll_y: 0,
         }
     }
@@ -155,10 +154,32 @@ impl State {
             self.surface_configured = true;
             self.game_loop.camera_controller.camera.aspect =
                 self.config.width as f32 / self.config.height as f32;
-            // NEW!
-            for instance_controller in self.game_loop.instance_controllers.iter_mut() {
-                instance_controller.resize(new_size, &self.device);
+            println!("{:?}", self.game_loop.camera_controller.camera.aspect);
+            let new_fov = map_value(
+                self.game_loop.camera_controller.camera.aspect,
+                0.8,
+                1.88,
+                25.0,
+                55.0,
+            );
+            self.game_loop.camera_controller.camera.fovy = new_fov;
+            if self.game_loop.camera_controller.camera.aspect
+                < self
+                    .game_loop
+                    .camera_controller
+                    .camera
+                    .camera_animator
+                    .aspect_ratio_limit
+            {
+                let eye = Point3::new(110.0, 90.0, -130.0);
+                let target = Point3::new(20.0, 25.0, 20.0);
+                self.game_loop.camera_controller.camera.eye = eye;
+                self.game_loop.camera_controller.camera.target = target;
+                self.game_loop.camera_controller.camera.fovy = 25.0;
             }
+            self.depth_texture =
+                Texture::create_depth_texture(&self.device, &new_size, "depth_texture_primitive");
+            // NEW!
         } else {
             println!("Not configured");
             self.surface_configured = false;
@@ -196,11 +217,17 @@ impl State {
             });
 
         {
-            self.game_loop.render(&mut encoder, &view);
+            self.game_loop
+                .render(&mut encoder, &view, self.depth_texture.clone());
         }
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
 
         Ok(())
     }
+}
+
+fn map_value(value: f32, old_min: f32, old_max: f32, new_max: f32, new_min: f32) -> f32 {
+    let value = value.clamp(old_min, old_max);
+    new_min + ((value - old_min) / (old_max - old_min)) * (new_max - new_min)
 }

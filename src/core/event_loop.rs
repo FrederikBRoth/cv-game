@@ -1,5 +1,4 @@
 use log::warn;
-use spin_sleep::SpinSleeper;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -95,9 +94,10 @@ impl ApplicationHandler<UserEvent> for App {
                 self.state = Some(state);
                 warn!("test")
             }
-            UserEvent::ScrollPosition { x, y } =>
-            {
-                #[cfg(target_arch = "wasm32")]
+            #[cfg(not(target_arch = "wasm32"))]
+            _ => {}
+            #[cfg(target_arch = "wasm32")]
+            UserEvent::ScrollPosition { x, y } => {
                 if let Some(state) = &mut self.state {
                     state.update_scroll(y as i64);
                 }
@@ -119,7 +119,6 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::RedrawRequested => {
                 let dt = self.last_time.elapsed();
                 self.last_time = web_time::Instant::now();
-                println!("{:?}", dt);
                 state.update(dt);
                 state.render().unwrap();
             }
@@ -129,11 +128,7 @@ impl ApplicationHandler<UserEvent> for App {
                 state.resize(size);
             }
 
-            WindowEvent::MouseWheel {
-                device_id,
-                delta,
-                phase,
-            } => {
+            WindowEvent::MouseWheel { delta, .. } => {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     match delta {

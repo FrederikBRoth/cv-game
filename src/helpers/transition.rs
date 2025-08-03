@@ -1,15 +1,25 @@
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 
-use crate::helpers::transition;
-#[derive(Debug, Clone, PartialEq)]
+use cgmath::{Point3, Vector1, Vector3};
 
-pub enum ScrollTransitions {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum VoxelObjects {
     Home,
     CSharp,
     CPlusPLus,
     Rust,
     Containerization,
+    Castle,
+    Viking,
+    Buttplug,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+
+pub enum CameraPositions {
+    Home((Point3<i32>, Point3<i32>)),
+    Rust((Point3<i32>, Point3<i32>)),
+    CPlusPLus((Point3<i32>, Point3<i32>)),
+    CSharp((Point3<i32>, Point3<i32>)),
 }
 
 pub struct TransitionHandler<T> {
