@@ -6,9 +6,13 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
-use crate::{entity::entity::OPENGL_TO_WGPU_MATRIX, helpers::animation::EaseOut};
+use crate::{
+    entity::entity::OPENGL_TO_WGPU_MATRIX,
+    helpers::animation::{EaseOut, Linear},
+};
 
 pub struct CameraAnimator {
+    pub speed: f32,
     pub animating: bool,
     pub time: f32,
     pub start_eye: Point3<f32>,
@@ -16,11 +20,12 @@ pub struct CameraAnimator {
     pub start_target: Point3<f32>,
     pub end_target: Point3<f32>,
     pub aspect_ratio_limit: f32,
+    pub height_modifier: f32,
 }
 
 impl CameraAnimator {
     pub fn lerp(&self) -> (Point3<f32>, Point3<f32>) {
-        let lerp_value = EaseOut::ease_out_cubic(self.time);
+        let lerp_value = Linear::ease_linear(self.time);
         let eye_anim = (self.start_eye + (self.end_eye - self.start_eye) * lerp_value);
         let target_anim = (self.start_target + (self.end_target - self.start_target) * lerp_value);
         (eye_anim, target_anim)
@@ -153,6 +158,8 @@ impl CameraController {
                 start_target: target,
                 end_target: target,
                 aspect_ratio_limit: 0.8,
+                height_modifier: 0.0,
+                speed: 1.0,
             },
         };
 
@@ -220,11 +227,11 @@ impl CameraController {
                 let var_name = *state == ElementState::Pressed;
                 let is_pressed = var_name;
                 match keycode {
-                    KeyCode::Space => {
+                    KeyCode::ShiftLeft => {
                         self.is_up_pressed = is_pressed;
                         true
                     }
-                    KeyCode::ShiftLeft => {
+                    KeyCode::ControlLeft => {
                         self.is_down_pressed = is_pressed;
                         true
                     }
@@ -260,6 +267,12 @@ impl CameraController {
 
         // Prevents glitching when camera gets too close to the
         // center of the scene.
+        if self.is_up_pressed && forward_mag > self.speed {
+            self.camera.eye += self.camera.up * self.speed;
+        }
+        if self.is_down_pressed {
+            self.camera.eye -= self.camera.up * self.speed;
+        }
         if self.is_forward_pressed && forward_mag > self.speed {
             self.camera.eye += forward_norm * self.speed;
         }
@@ -306,10 +319,12 @@ impl CameraController {
         {
             return;
         }
-        self.camera.camera_animator.time += dt;
+        self.camera.camera_animator.time += dt * self.camera.camera_animator.speed;
         self.camera.camera_animator.time = self.camera.camera_animator.time.clamp(0.0, 1.0);
 
         let lerped = self.camera.camera_animator.lerp();
+        // self.camera.eye = Point3::new(lerped.0.x, self.camera.eye.y, lerped.0.z);
+        // self.camera.target = Point3::new(lerped.1.x, self.camera.target.y, lerped.1.z);
         self.camera.eye = lerped.0;
         self.camera.target = lerped.1;
         if self.camera.camera_animator.time >= 1.0 {
@@ -317,18 +332,40 @@ impl CameraController {
         }
     }
 
-    pub fn add_animation(&mut self, animation_point: (Point3<i32>, Point3<i32>)) {
+    pub fn animate(&mut self, animation_point: (Point3<i32>, Point3<i32>), speed: f32) {
         // let factor = (self.camera.aspect - 1.0).max(0.0);
         let factor = 1.0;
-        let end_eye = animation_point.0.cast().unwrap();
-        let end_target = animation_point.1.cast().unwrap();
-        self.camera.camera_animator.end_eye =
-            Point3::new(end_eye.x * factor, end_eye.y, end_eye.z * factor);
-        self.camera.camera_animator.end_target =
-            Point3::new(end_target.x * factor, end_target.y, end_target.z * factor);
+        let end_eye: Point3<f32> = animation_point.0.cast().unwrap();
+        let end_target: Point3<f32> = animation_point.1.cast().unwrap();
+        self.camera.camera_animator.end_eye = Point3::new(
+            end_eye.x * factor,
+            end_eye.y + self.camera.camera_animator.height_modifier,
+            end_eye.z * factor,
+        );
+        self.camera.camera_animator.end_target = Point3::new(
+            end_target.x * factor,
+            end_target.y + self.camera.camera_animator.height_modifier,
+            end_target.z * factor,
+        );
         self.camera.camera_animator.start_eye = self.camera.eye;
         self.camera.camera_animator.start_target = self.camera.target;
         self.camera.camera_animator.animating = true;
         self.camera.camera_animator.time = 0.0;
+        self.camera.camera_animator.speed = speed;
     }
+}
+
+pub fn normalize_and_map_camera_height(x: i64, a: i64, b: i64, start: f32, end: f32) -> f32 {
+    if a == b {
+        return end;
+    }
+
+    let x = x as f32;
+    let a = a as f32;
+    let b = b as f32;
+
+    let normalized = (x - a) / (b - a);
+
+    // Map from 0.0–1.0 to -25.0–25.0
+    start + (end * 2.0) * normalized
 }

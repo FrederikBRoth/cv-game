@@ -622,11 +622,7 @@ impl PrimitiveMesh {
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less, // standard depth test
                 stencil: wgpu::StencilState::default(),     // no stencil operations
-                bias: wgpu::DepthBiasState {
-                    constant: 5,
-                    slope_scale: 0.075,
-                    clamp: 0.1,
-                },
+                bias: wgpu::DepthBiasState::default(),
             }),
             // depth_stencil: None,
             multisample: wgpu::MultisampleState {

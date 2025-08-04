@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, vec};
 
 use cgmath::{EuclideanSpace, InnerSpace, Point3, Vector2, Vector3};
 use log::warn;
@@ -9,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    core::camera::CameraController,
+    core::camera::{normalize_and_map_camera_height, CameraController},
     entity::{
         entity::{
             instance_cube, instances_list, instances_list_cube, make_cube_primitive,
@@ -112,23 +112,60 @@ impl Gameloop {
             for (i, instance) in instance_controller.instances.iter_mut().enumerate() {
                 self.animation_handler.update_instance(i, instance);
             }
-            if let Some(transition) = self.camera_transition_handler.trigger_transition(scroll_y) {
+            //Can move camera based on scroll_y. Cool idea, but doesnt look that good honestly
+            // let test: (i64, i64, Option<CameraPositions>) = self
+            //     .camera_transition_handler
+            //     .get_transition_per_movement(scroll_y);
+            // let normalized_height = normalize_and_map_camera_height(test.1, 0, test.0, 45.0, -50.0);
+            // if let Some(transition) = test.2 {
+            //     println!("{:?}", normalized_height);
+
+            //     match transition {
+            //         //Dont do anything if at home position
+            //         CameraPositions::LeftSide(position) => {
+            //             self.camera_controller
+            //                 .camera
+            //                 .camera_animator
+            //                 .height_modifier = normalized_height;
+            //             self.camera_controller.animate(position, 30.0)
+            //         }
+            //         CameraPositions::RightSide(position) => {
+            //             self.camera_controller
+            //                 .camera
+            //                 .camera_animator
+            //                 .height_modifier = normalized_height;
+            //             self.camera_controller.animate(position, 30.0)
+            //         }
+            //         _ => {}
+            //     }
+            // }
+            if let Some(transition) = self.camera_transition_handler.get_transition_once(scroll_y) {
                 match transition.clone() {
-                    CameraPositions::Home(position) => {
-                        self.camera_controller.add_animation(position);
+                    CameraPositions::Middle(position) => {
+                        self.camera_controller
+                            .camera
+                            .camera_animator
+                            .height_modifier = 0.0;
+                        self.camera_controller.animate(position, 5.0);
                     }
-                    CameraPositions::Rust(position) => {
-                        self.camera_controller.add_animation(position);
+                    CameraPositions::LeftSide(position) => {
+                        self.camera_controller
+                            .camera
+                            .camera_animator
+                            .height_modifier = 0.0;
+                        self.camera_controller.animate(position, 5.0)
                     }
-                    CameraPositions::CPlusPLus(position) => {
-                        self.camera_controller.add_animation(position);
-                    }
-                    CameraPositions::CSharp(position) => {
-                        self.camera_controller.add_animation(position);
+                    CameraPositions::RightSide(position) => {
+                        self.camera_controller
+                            .camera
+                            .camera_animator
+                            .height_modifier = 0.0;
+                        self.camera_controller.animate(position, 5.0)
                     }
                 }
             }
-            if let Some(transition) = self.transition_handler.trigger_transition(scroll_y) {
+
+            if let Some(transition) = self.transition_handler.get_transition_once(scroll_y) {
                 match transition.clone() {
                     VoxelObjects::Home => {
                         self.camera_controller.auto = true;
@@ -145,8 +182,11 @@ impl Gameloop {
                             .reset_instance_position_to_current_position(
                                 &mut instance_controller.instances,
                             );
-                        self.voxel_helper
-                            .transition_to_object(transition, &mut self.animation_handler);
+                        self.voxel_helper.transition_to_object(
+                            transition,
+                            &mut self.animation_handler,
+                            false,
+                        );
                     }
 
                     _ => {}
@@ -159,32 +199,41 @@ impl Gameloop {
                 // if self.elapsed_time < 2.0 {
                 //     return;
                 // }
-                let animation_time = self.elapsed_time % 24.0;
+                let animation_time = self.elapsed_time % 8.0;
                 let ready = !self.animation_handler.is_locked();
                 if animation_time.floor() == 0.0 && ready {
                     self.animation_handler
                         .reset_instance_position_to_current_position(
                             &mut instance_controller.instances,
                         );
-                    self.voxel_helper
-                        .transition_to_object(VoxelObjects::Buttplug, &mut self.animation_handler);
+                    self.voxel_helper.transition_to_object(
+                        VoxelObjects::HandballBird,
+                        &mut self.animation_handler,
+                        true,
+                    );
                 }
-                if animation_time.floor() == 8.0 && ready {
+                if animation_time.floor() == 4.0 && ready {
                     self.animation_handler
                         .reset_instance_position_to_current_position(
                             &mut instance_controller.instances,
                         );
-                    self.voxel_helper
-                        .transition_to_object(VoxelObjects::Viking, &mut self.animation_handler);
+                    self.voxel_helper.transition_to_object(
+                        VoxelObjects::FemogfirsSlangen,
+                        &mut self.animation_handler,
+                        true,
+                    );
                 }
-                if animation_time.floor() == 16.0 && ready {
-                    self.animation_handler
-                        .reset_instance_position_to_current_position(
-                            &mut instance_controller.instances,
-                        );
-                    self.voxel_helper
-                        .transition_to_object(VoxelObjects::Castle, &mut self.animation_handler);
-                }
+                // if animation_time.floor() == 16.0 && ready {
+                //     self.animation_handler
+                //         .reset_instance_position_to_current_position(
+                //             &mut instance_controller.instances,
+                //         );
+                //     self.voxel_helper.transition_to_object(
+                //         VoxelObjects::Castle,
+                //         &mut self.animation_handler,
+                //         true,
+                //     );
+                // }
             }
         }
     }
@@ -251,6 +300,7 @@ impl Gameloop {
                         self.voxel_helper.transition_to_object(
                             VoxelObjects::Viking,
                             &mut self.animation_handler,
+                            true,
                         );
                     }
                     _ => {}
@@ -261,6 +311,7 @@ impl Gameloop {
                         self.voxel_helper.transition_to_object(
                             VoxelObjects::Buttplug,
                             &mut self.animation_handler,
+                            true,
                         );
                     }
                     _ => {}
@@ -270,6 +321,7 @@ impl Gameloop {
                         self.voxel_helper.transition_to_object(
                             VoxelObjects::Castle,
                             &mut self.animation_handler,
+                            true,
                         );
                     }
                     _ => {}
@@ -456,7 +508,7 @@ impl Gameloop {
 
         // Create instance controller and game loop
 
-        let chunk_size_cube = Vector3::new(40, 40, 40);
+        let chunk_size_cube = Vector3::new(40, 50, 40);
 
         let mesh_type = MeshType::Primitive;
         let instance_controller: InstanceController = match mesh_type {
@@ -529,6 +581,9 @@ impl Gameloop {
         let rust_logo = include_bytes!("../../src/rust.vox");
         let c_plus_plus = include_bytes!("../../src/cplusplus.vox");
         let c_sharp = include_bytes!("../../src/csharp.vox");
+        let docker = include_bytes!("../../src/docker.vox");
+        let hb_fugl = include_bytes!("../../src/hbfugl.vox");
+        let femo_snake = include_bytes!("../../src/femoslangen.vox");
 
         let mut voxel_handler = VoxelHandler::new();
         voxel_handler.add_voxel(test, VoxelObjects::Buttplug);
@@ -537,35 +592,98 @@ impl Gameloop {
         voxel_handler.add_voxel(rust_logo, VoxelObjects::Rust);
         voxel_handler.add_voxel(c_plus_plus, VoxelObjects::CPlusPLus);
         voxel_handler.add_voxel(c_sharp, VoxelObjects::CSharp);
+        voxel_handler.add_voxel(docker, VoxelObjects::Containerization);
+        voxel_handler.add_voxel(hb_fugl, VoxelObjects::HandballBird);
+        voxel_handler.add_voxel(femo_snake, VoxelObjects::FemogfirsSlangen);
+
+        let transition_scroll_positions: Vec<i64> =
+            vec![300, 1300, 2100, 2950, 3850, 4750, 5599, 6485, 7200];
 
         let mut transition_map = BTreeMap::new();
-        transition_map.insert(500, VoxelObjects::Home);
-        transition_map.insert(1000, VoxelObjects::CSharp);
-        transition_map.insert(1500, VoxelObjects::Rust);
-        transition_map.insert(2000, VoxelObjects::CPlusPLus);
-        transition_map.insert(2500, VoxelObjects::Containerization);
+        transition_map.insert(
+            *transition_scroll_positions.get(0).unwrap(),
+            VoxelObjects::Home,
+        );
+        transition_map.insert(
+            *transition_scroll_positions.get(1).unwrap(),
+            VoxelObjects::CSharp,
+        );
+        transition_map.insert(
+            *transition_scroll_positions.get(2).unwrap(),
+            VoxelObjects::Rust,
+        );
+        transition_map.insert(
+            *transition_scroll_positions.get(3).unwrap(),
+            VoxelObjects::CPlusPLus,
+        );
+        transition_map.insert(
+            *transition_scroll_positions.get(4).unwrap(),
+            VoxelObjects::Containerization,
+        );
+        transition_map.insert(
+            *transition_scroll_positions.get(5).unwrap(),
+            VoxelObjects::CPlusPLus,
+        );
+        transition_map.insert(
+            *transition_scroll_positions.get(6).unwrap(),
+            VoxelObjects::CSharp,
+        );
+        transition_map.insert(
+            *transition_scroll_positions.get(7).unwrap(),
+            VoxelObjects::Rust,
+        );
+        transition_map.insert(
+            *transition_scroll_positions.get(8).unwrap(),
+            VoxelObjects::CPlusPLus,
+        );
 
         let transition_handler = TransitionHandler::new(transition_map);
 
+        let camera_middle = CameraPositions::Middle(((-120, 90, -120).into(), (20, 25, 20).into()));
+        let camera_right_side =
+            CameraPositions::RightSide(((-50, 50, -190).into(), (90, 25, -50).into()));
+        let camera_left_side =
+            CameraPositions::LeftSide(((90, 90, -190).into(), (-50, 25, -50).into()));
+
         let mut camera_transition = BTreeMap::new();
         camera_transition.insert(
-            500,
-            CameraPositions::Home(((-120, 90, -120).into(), (20, 25, 20).into())),
+            *transition_scroll_positions.get(0).unwrap(),
+            camera_middle.clone(),
         );
         camera_transition.insert(
-            1000,
-            CameraPositions::CSharp(((-50, 90, -190).into(), (90, 25, -50).into())),
+            *transition_scroll_positions.get(1).unwrap(),
+            camera_right_side.clone(),
         );
         camera_transition.insert(
-            1500,
-            CameraPositions::Rust(((90, 90, -190).into(), (-50, 25, -50).into())),
+            *transition_scroll_positions.get(2).unwrap(),
+            camera_left_side.clone(),
         );
         camera_transition.insert(
-            2000,
-            CameraPositions::CPlusPLus(((-40, 90, -190).into(), (90, 25, -40).into())),
+            *transition_scroll_positions.get(3).unwrap(),
+            camera_right_side.clone(),
         );
-
+        camera_transition.insert(
+            *transition_scroll_positions.get(4).unwrap(),
+            camera_left_side.clone(),
+        );
+        camera_transition.insert(
+            *transition_scroll_positions.get(5).unwrap(),
+            camera_middle.clone(),
+        );
+        camera_transition.insert(
+            *transition_scroll_positions.get(6).unwrap(),
+            camera_right_side.clone(),
+        );
+        camera_transition.insert(
+            *transition_scroll_positions.get(7).unwrap(),
+            camera_left_side.clone(),
+        );
+        camera_transition.insert(
+            *transition_scroll_positions.get(8).unwrap(),
+            camera_middle.clone(),
+        );
         let camera_transition_handler = TransitionHandler::new(camera_transition);
+
         Gameloop {
             name,
             device,

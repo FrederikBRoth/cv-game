@@ -79,156 +79,156 @@ pub struct PrimitiveCube {
     pub vertices: Vec<PrimitiveVertex>,
     pub indices: Vec<u16>,
 }
-const PRIMITIVE_VERTICES: &[PrimitiveVertex] = &[
-    PrimitiveVertex {
-        position: [0.0, 0.0, 0.0],
-        color: [1.0, 0.0, 1.0],
-        normal: [0.0, -1.0, 0.0],
-    }, // A
-    PrimitiveVertex {
-        position: [0.0, 0.0, 1.0],
-        color: [1.0, 0.0, 1.0],
-        normal: [0.0, 0.0, 1.0],
-    }, // B
-    PrimitiveVertex {
-        position: [1.0, 0.0, 0.0],
-        color: [1.0, 0.0, 1.0],
-        normal: [0.0, 0.0, 0.0],
-    }, // C
-    PrimitiveVertex {
-        position: [1.0, 0.0, 1.0],
-        color: [1.0, 0.0, 1.0],
-        normal: [1.0, 0.0, 0.0],
-    }, // D
-    PrimitiveVertex {
-        position: [1.0, 1.0, 0.0],
-        color: [1.0, 0.0, 1.0],
-        normal: [0.0, 1.0, 0.0],
-    }, // A
-    PrimitiveVertex {
-        position: [1.0, 1.0, 1.0],
-        color: [1.0, 0.0, 1.0],
-        normal: [0.0, 0.0, 0.0],
-    }, // B
-    PrimitiveVertex {
-        position: [0.0, 1.0, 0.0],
-        color: [1.0, 0.0, 1.0],
-        normal: [0.0, 0.0, -1.0],
-    }, // C
-    PrimitiveVertex {
-        position: [0.0, 1.0, 1.0],
-        color: [1.0, 0.0, 1.0],
-        normal: [-1.0, 0.0, 0.0],
-    }, // D
-];
-impl PrimitiveCube {
-    pub fn new() -> PrimitiveCube {
-        PrimitiveCube {
-            vertices: PRIMITIVE_VERTICES.to_vec(),
-            indices: INDICES.to_vec(),
-        }
-    }
-}
-
+// const PRIMITIVE_VERTICES: &[PrimitiveVertex] = &[
+//     PrimitiveVertex {
+//         position: [0.0, 0.0, 0.0],
+//         color: [1.0, 0.0, 1.0],
+//         normal: [0.0, -1.0, 0.0],
+//     }, // A
+//     PrimitiveVertex {
+//         position: [0.0, 0.0, 1.0],
+//         color: [1.0, 0.0, 1.0],
+//         normal: [0.0, 0.0, 1.0],
+//     }, // B
+//     PrimitiveVertex {
+//         position: [1.0, 0.0, 0.0],
+//         color: [1.0, 0.0, 1.0],
+//         normal: [0.0, 0.0, 0.0],
+//     }, // C
+//     PrimitiveVertex {
+//         position: [1.0, 0.0, 1.0],
+//         color: [1.0, 0.0, 1.0],
+//         normal: [1.0, 0.0, 0.0],
+//     }, // D
+//     PrimitiveVertex {
+//         position: [1.0, 1.0, 0.0],
+//         color: [1.0, 0.0, 1.0],
+//         normal: [0.0, 1.0, 0.0],
+//     }, // A
+//     PrimitiveVertex {
+//         position: [1.0, 1.0, 1.0],
+//         color: [1.0, 0.0, 1.0],
+//         normal: [0.0, 0.0, 0.0],
+//     }, // B
+//     PrimitiveVertex {
+//         position: [0.0, 1.0, 0.0],
+//         color: [1.0, 0.0, 1.0],
+//         normal: [0.0, 0.0, -1.0],
+//     }, // C
+//     PrimitiveVertex {
+//         position: [0.0, 1.0, 1.0],
+//         color: [1.0, 0.0, 1.0],
+//         normal: [-1.0, 0.0, 0.0],
+//     }, // D
+// ];
 // impl PrimitiveCube {
-//     pub fn new() -> Self {
-//         let face_color = [1.0, 0.0, 1.0];
-
-//         let mut vertices = Vec::new();
-//         let mut indices = Vec::new();
-
-//         let mut i = 0u16;
-//         let mut push_face = |positions: [[f32; 3]; 6], normal: [f32; 3]| {
-//             for pos in positions.iter() {
-//                 vertices.push(PrimitiveVertex {
-//                     position: *pos,
-//                     color: face_color,
-//                     normal,
-//                 });
-//                 indices.push(i);
-//                 i += 1;
-//             }
-//         };
-
-//         // Face vertices (two triangles per face)
-//         push_face(
-//             [
-//                 // Front (Z+)
-//                 [0.0, 0.0, 1.0],
-//                 [1.0, 0.0, 1.0],
-//                 [1.0, 1.0, 1.0],
-//                 [0.0, 0.0, 1.0],
-//                 [1.0, 1.0, 1.0],
-//                 [0.0, 1.0, 1.0],
-//             ],
-//             [0.0, 0.0, 1.0],
-//         );
-
-//         push_face(
-//             [
-//                 // Back (Z-)
-//                 [1.0, 0.0, 0.0],
-//                 [0.0, 0.0, 0.0],
-//                 [0.0, 1.0, 0.0],
-//                 [1.0, 0.0, 0.0],
-//                 [0.0, 1.0, 0.0],
-//                 [1.0, 1.0, 0.0],
-//             ],
-//             [0.0, 0.0, -1.0],
-//         );
-
-//         push_face(
-//             [
-//                 // Right (X+)
-//                 [1.0, 0.0, 1.0],
-//                 [1.0, 0.0, 0.0],
-//                 [1.0, 1.0, 0.0],
-//                 [1.0, 0.0, 1.0],
-//                 [1.0, 1.0, 0.0],
-//                 [1.0, 1.0, 1.0],
-//             ],
-//             [1.0, 0.0, 0.0],
-//         );
-
-//         push_face(
-//             [
-//                 // Left (X-)
-//                 [0.0, 0.0, 0.0],
-//                 [0.0, 0.0, 1.0],
-//                 [0.0, 1.0, 1.0],
-//                 [0.0, 0.0, 0.0],
-//                 [0.0, 1.0, 1.0],
-//                 [0.0, 1.0, 0.0],
-//             ],
-//             [-1.0, 0.0, 0.0],
-//         );
-
-//         push_face(
-//             [
-//                 // Top (Y+)
-//                 [0.0, 1.0, 1.0],
-//                 [1.0, 1.0, 1.0],
-//                 [1.0, 1.0, 0.0],
-//                 [0.0, 1.0, 1.0],
-//                 [1.0, 1.0, 0.0],
-//                 [0.0, 1.0, 0.0],
-//             ],
-//             [0.0, 1.0, 0.0],
-//         );
-
-//         push_face(
-//             [
-//                 // Bottom (Y-)
-//                 [0.0, 0.0, 0.0],
-//                 [1.0, 0.0, 0.0],
-//                 [1.0, 0.0, 1.0],
-//                 [0.0, 0.0, 0.0],
-//                 [1.0, 0.0, 1.0],
-//                 [0.0, 0.0, 1.0],
-//             ],
-//             [0.0, -1.0, 0.0],
-//         );
-
-//         Self { vertices, indices }
+//     pub fn new() -> PrimitiveCube {
+//         PrimitiveCube {
+//             vertices: PRIMITIVE_VERTICES.to_vec(),
+//             indices: INDICES.to_vec(),
+//         }
 //     }
 // }
+
+impl PrimitiveCube {
+    pub fn new() -> Self {
+        let face_color = [1.0, 0.0, 1.0];
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        let mut i = 0u16;
+        let mut push_face = |positions: [[f32; 3]; 6], normal: [f32; 3]| {
+            for pos in positions.iter() {
+                vertices.push(PrimitiveVertex {
+                    position: *pos,
+                    color: face_color,
+                    normal,
+                });
+                indices.push(i);
+                i += 1;
+            }
+        };
+
+        // Face vertices (two triangles per face)
+        push_face(
+            [
+                // Front (Z+)
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 1.0, 1.0],
+            ],
+            [0.0, 0.0, 1.0],
+        );
+
+        push_face(
+            [
+                // Back (Z-)
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ],
+            [0.0, 0.0, -1.0],
+        );
+
+        push_face(
+            [
+                // Right (X+)
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 1.0, 0.0],
+                [1.0, 1.0, 1.0],
+            ],
+            [1.0, 0.0, 0.0],
+        );
+
+        push_face(
+            [
+                // Left (X-)
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 1.0, 0.0],
+            ],
+            [-1.0, 0.0, 0.0],
+        );
+
+        push_face(
+            [
+                // Top (Y+)
+                [0.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 1.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            [0.0, 1.0, 0.0],
+        );
+
+        push_face(
+            [
+                // Bottom (Y-)
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0],
+            ],
+            [0.0, -1.0, 0.0],
+        );
+
+        Self { vertices, indices }
+    }
+}

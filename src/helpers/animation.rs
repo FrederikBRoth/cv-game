@@ -35,13 +35,21 @@ pub fn ease_in_ease_out_loop(dt: f32, delay: f32, freq: f32) -> f32 {
 
 pub fn get_height_color(height: f32) -> Vector3<f32> {
     // high color rgb(255, 153, 230)
+    //#f472b6
     //low color rgb(204, 0, 153)
+    //#db2777
 
-    let high_color = Vector3::new(0.9, 0.4, 0.702);
-    let low_color = Vector3::new(0.8, 0.0, 0.6);
+    let low_color = Vector3::new(0.852, 0.067, 0.318);
+    let high_color = Vector3::new(0.953, 0.406, 0.674);
     low_color + (high_color - low_color) * height
 }
-
+#[derive(Copy, Clone)]
+pub struct Linear;
+impl Linear {
+    pub fn ease_linear(number: f32) -> f32 {
+        number.clamp(0.0, 1.0)
+    }
+}
 #[derive(Copy, Clone)]
 pub struct EaseOut;
 impl EaseOut {

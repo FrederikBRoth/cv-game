@@ -80,8 +80,19 @@ impl<T: Eq + std::hash::Hash + Clone> VoxelHandler<T> {
         let current_voxel = self.current_voxel.as_mut().unwrap().clone();
         self.transition_to_object_base(current_voxel, animation_handler, amplify, false, false);
     }
-    pub fn transition_to_object(&mut self, object: T, animation_handler: &mut AnimationHandler) {
-        self.transition_to_object_base(object.clone(), animation_handler, 1.0, true, false);
+    pub fn transition_to_object(
+        &mut self,
+        object: T,
+        animation_handler: &mut AnimationHandler,
+        use_object_color: bool,
+    ) {
+        self.transition_to_object_base(
+            object.clone(),
+            animation_handler,
+            1.0,
+            true,
+            use_object_color,
+        );
     }
 
     fn transition_to_object_base(
@@ -143,7 +154,7 @@ impl<T: Eq + std::hash::Hash + Clone> VoxelHandler<T> {
                 let movement_vector = cube - animation.grid_pos;
                 let animation = AnimationType::Step(AnimationStep::new(
                     movement_vector * amplify,
-                    0.4,
+                    0.75,
                     false,
                     false,
                     is_onetime,
@@ -153,6 +164,8 @@ impl<T: Eq + std::hash::Hash + Clone> VoxelHandler<T> {
                     let &color = object.color.get(i).unwrap();
 
                     animation_handler.set_manual_animation_color(instance_index, color);
+                } else {
+                    animation_handler.set_animated_color(instance_index);
                 }
                 animation_handler.set_animation(instance_index, animation);
                 // animation_handler.reset_animation_time(index);
@@ -186,7 +199,7 @@ impl<T: Eq + std::hash::Hash + Clone> VoxelHandler<T> {
                 }
                 let animation = AnimationType::Step(AnimationStep::new(
                     movement_vector,
-                    0.25,
+                    0.5,
                     false,
                     false,
                     is_onetime,
