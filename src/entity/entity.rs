@@ -310,6 +310,7 @@ impl InstanceController {
 
 #[derive(Clone)]
 pub struct Instance {
+    pub index: u32,
     pub position: cgmath::Vector3<f32>,
     pub rotation: cgmath::Quaternion<f32>,
     pub should_render: bool,
@@ -782,6 +783,7 @@ pub fn instances_list(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Instance> {
             let default_bounding = default_size + position;
 
             Instance {
+                index: n,
                 position,
                 rotation,
                 scale: 0.5,
@@ -818,6 +820,7 @@ pub fn instances_list_cube(chunk: Chunk, chunk_size: Vector3<u32>) -> Vec<Instan
             let default_bounding = default_size + position;
 
             Instance {
+                index: n,
                 position,
                 rotation,
                 scale: 0.5,
@@ -843,6 +846,7 @@ pub fn instance_cube(position: Vector3<f32>) -> Instance {
     let default_bounding = default_size + position;
 
     Instance {
+        index: 0,
         position,
         rotation,
         scale: 0.5,
@@ -888,6 +892,7 @@ pub fn instances_list_circle(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Inst
                 || z == radius as u32
             {
                 Instance {
+                    index: n,
                     position,
                     rotation,
                     scale: 0.5,
@@ -898,6 +903,7 @@ pub fn instances_list_circle(chunk: Chunk, chunk_size: Vector2<u32>) -> Vec<Inst
                 }
             } else {
                 Instance {
+                    index: n,
                     position,
                     rotation,
                     scale: 0.5,
@@ -947,6 +953,7 @@ pub fn instances_list_cylinder(chunk: Chunk, chunk_size: Vector3<u32>) -> Vec<In
                 || z == radius as u32
             {
                 Instance {
+                    index: n,
                     position,
                     rotation,
                     scale: 0.5,
@@ -957,6 +964,7 @@ pub fn instances_list_cylinder(chunk: Chunk, chunk_size: Vector3<u32>) -> Vec<In
                 }
             } else {
                 Instance {
+                    index: n,
                     position,
                     rotation,
                     scale: 0.5,
@@ -993,6 +1001,7 @@ pub fn instances_list2() -> Vec<Instance> {
             let default_bounding = default_size + position;
 
             Instance {
+                index: n,
                 position,
                 rotation,
                 scale: 0.5,

@@ -14,6 +14,7 @@ pub enum VoxelObjects {
     Buttplug,
     HandballBird,
     FemogfirsSlangen,
+    BadApple,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 
@@ -21,6 +22,7 @@ pub enum CameraPositions {
     Middle((Point3<i32>, Point3<i32>)),
     LeftSide((Point3<i32>, Point3<i32>)),
     RightSide((Point3<i32>, Point3<i32>)),
+    FrontAndCenter((Point3<i32>, Point3<i32>)),
 }
 
 pub struct TransitionHandler<T> {

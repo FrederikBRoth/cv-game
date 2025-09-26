@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, sync::Arc, vec};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+    vec,
+};
 
 use cgmath::{EuclideanSpace, InnerSpace, Point3, Vector2, Vector3};
 use log::warn;
@@ -13,7 +17,7 @@ use crate::{
     entity::{
         entity::{
             instance_cube, instances_list, instances_list_cube, make_cube_primitive,
-            make_cube_textured, InstanceController, Light, MeshType,
+            make_cube_textured, InstanceController, Light, MeshBuffer, MeshType, Renderer,
         },
         primitive_texture::PrimitiveTexture,
         texture::Texture,
@@ -23,6 +27,7 @@ use crate::{
             AnimationHandler, AnimationPersistent, AnimationStep, AnimationTransition,
             AnimationType, EaseInEaseOutLoop, EaseOut,
         },
+        assets::{self},
         line_trace::{aabb_sphere_intersect, line_trace},
         transition::{CameraPositions, TransitionHandler, VoxelObjects},
         voxel_builder::VoxelHandler,
@@ -44,10 +49,15 @@ pub struct Gameloop {
     pub instance_controllers: Vec<InstanceController>,
     pub camera_controller: CameraController,
     pub elapsed_time: f32,
+    pub elapsed_acc: f32,
     pub animation_handler: AnimationHandler,
     pub voxel_helper: VoxelHandler<VoxelObjects>,
     pub transition_handler: TransitionHandler<VoxelObjects>,
     pub camera_transition_handler: TransitionHandler<CameraPositions>,
+    pub bad_apple: (MeshBuffer, Renderer),
+    pub bad_apple_toggle: bool,
+    pub bad_apple_data: Vec<Vec<u8>>,
+    pub bad_apple_index: usize,
 }
 
 impl Gameloop {
@@ -105,7 +115,27 @@ impl Gameloop {
         );
 
         let dts = dt.as_secs_f32();
+
         for instance_controller in self.instance_controllers.iter_mut() {
+            if self.bad_apple_toggle {
+                let target = 1.0 / 30.0;
+                self.elapsed_acc += dts;
+                if self.elapsed_acc >= target {
+                    self.voxel_helper.transition_to_custom_object(
+                        VoxelObjects::BadApple,
+                        self.bad_apple_index,
+                        &mut self.animation_handler,
+                        true,
+                        true,
+                    );
+                    // println!("30Hz tick");
+                    if (self.animation_handler.movement_list[0].animations.len() > 1) {
+                        println!("oh shit")
+                    }
+                    self.bad_apple_index = self.bad_apple_index + 1;
+                    self.elapsed_acc -= target;
+                }
+            }
             self.animation_handler.animate(dts);
             self.camera_controller.animate_camera(dts);
 
@@ -162,6 +192,13 @@ impl Gameloop {
                             .height_modifier = 0.0;
                         self.camera_controller.animate(position, 5.0)
                     }
+                    CameraPositions::FrontAndCenter(position) => {
+                        self.camera_controller
+                            .camera
+                            .camera_animator
+                            .height_modifier = 0.0;
+                        self.camera_controller.animate(position, 5.0)
+                    }
                 }
             }
 
@@ -185,6 +222,7 @@ impl Gameloop {
                         self.voxel_helper.transition_to_object(
                             transition,
                             &mut self.animation_handler,
+                            false,
                             false,
                         );
                     }
@@ -210,6 +248,7 @@ impl Gameloop {
                         VoxelObjects::HandballBird,
                         &mut self.animation_handler,
                         true,
+                        false,
                     );
                 }
                 if animation_time.floor() == 4.0 && ready {
@@ -221,6 +260,7 @@ impl Gameloop {
                         VoxelObjects::FemogfirsSlangen,
                         &mut self.animation_handler,
                         true,
+                        false,
                     );
                 }
                 // if animation_time.floor() == 16.0 && ready {
@@ -234,6 +274,17 @@ impl Gameloop {
                 //         true,
                 //     );
                 // }
+            }
+
+            if self.bad_apple_toggle {
+                let x = self.camera_controller.camera.eye.z.abs(); // make x absolute
+                let max = 3.0;
+                let min = 0.5;
+                let k = 0.01; // controls steepness
+                let midpoint = 275.0; // controls where curve bends (half of 550)
+
+                let value = min + (max - min) / (1.0 + (x / midpoint).powf(k * midpoint));
+                self.camera_controller.speed = value;
             }
         }
     }
@@ -260,7 +311,7 @@ impl Gameloop {
                             self.camera_controller.speed = 0.4;
                         } else {
                             self.camera_controller.speed = 1.0;
-                            self.camera_controller.is_right_pressed = false;
+                            self.camera_controller.is_right_pressed = true;
                         }
                     }
                     _ => {}
@@ -296,10 +347,22 @@ impl Gameloop {
                 KeyCode::End => match state {
                     winit::event::ElementState::Pressed => {
                         log::warn!("Clicked");
-
-                        self.voxel_helper.transition_to_object(
-                            VoxelObjects::Viking,
+                        let camera_bad_apple = ((162, 122, -560).into(), (162, 122, 0).into());
+                        self.camera_controller
+                            .camera
+                            .camera_animator
+                            .height_modifier = 0.0;
+                        self.camera_controller.animate(camera_bad_apple, 5.0);
+                        self.bad_apple_toggle = !self.bad_apple_toggle;
+                        self.bad_apple_index = 0;
+                        for i in &mut self.instance_controllers {
+                            i.render.pipeline = self.bad_apple.1.pipeline.clone();
+                        }
+                        self.voxel_helper.transition_to_custom_object(
+                            VoxelObjects::BadApple,
+                            0,
                             &mut self.animation_handler,
+                            true,
                             true,
                         );
                     }
@@ -312,6 +375,7 @@ impl Gameloop {
                             VoxelObjects::Buttplug,
                             &mut self.animation_handler,
                             true,
+                            false,
                         );
                     }
                     _ => {}
@@ -322,6 +386,7 @@ impl Gameloop {
                             VoxelObjects::Castle,
                             &mut self.animation_handler,
                             true,
+                            false,
                         );
                     }
                     _ => {}
@@ -415,7 +480,9 @@ impl Gameloop {
                                                     false,
                                                     false,
                                                     false,
+                                                    false,
                                                     AnimationTransition::EaseOut(EaseOut),
+                                                    0,
                                                 ));
                                             // instance.color = Vector3::new(0.0, 1.0, 0.0);
                                             self.animation_handler.set_animation(i, animation);
@@ -479,6 +546,10 @@ impl Gameloop {
         let primitive_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("PrimitiveShader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/primitive.wgsl").into()),
+        });
+        let ba_primitive_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("BAPrimitiveShader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/bashader.wgsl").into()),
         });
         let light_position = Vector3::new(60.0, 20.0, 60.0);
         let mesh = make_cube_primitive();
@@ -559,31 +630,41 @@ impl Gameloop {
             }
         };
 
+        let ba = mesh.get_mesh_buffer(
+            &device,
+            &ba_primitive_shader,
+            surface_format,
+            &queue,
+            camera_controller.camera_bind_group_layout.clone(),
+            light_source.light_bind_group_layout.clone(),
+            light_source.light_bind_group.clone(),
+            size,
+        );
         let instance_controllers = vec![instance_controller];
 
-        let persistent = AnimationPersistent::new(
-            Vector3 {
-                x: 0.0,
-                y: 1.0,
-                z: 0.0,
-            },
-            AnimationTransition::EaseInEaseOutLoop(EaseInEaseOutLoop),
-        );
+        // let persistent = AnimationPersistent::new(
+        //     Vector3 {
+        //         x: 0.0,
+        //         y: 1.0,
+        //         z: 0.0,
+        //     },
+        //     AnimationTransition::EaseInEaseOutLoop(EaseInEaseOutLoop),
+        // );
 
-        let animation_enums = vec![AnimationType::Persistent(persistent)];
+        // let animation_enums = vec![AnimationType::Persistent(persistent)];
         // let animation_enums = vec![];
         let animation_handler =
-            AnimationHandler::new(&instance_controllers.first().unwrap(), animation_enums);
+            AnimationHandler::new(&instance_controllers.first().unwrap(), vec![]);
 
-        let test = include_bytes!("../../src/test.vox");
-        let castle = include_bytes!("../../src/castle.vox");
-        let chr_knight = include_bytes!("../../src/chr_knight.vox");
-        let rust_logo = include_bytes!("../../src/rust.vox");
-        let c_plus_plus = include_bytes!("../../src/cplusplus.vox");
-        let c_sharp = include_bytes!("../../src/csharp.vox");
-        let docker = include_bytes!("../../src/docker.vox");
-        let hb_fugl = include_bytes!("../../src/hbfugl.vox");
-        let femo_snake = include_bytes!("../../src/femoslangen.vox");
+        let test = include_bytes!("../test.vox");
+        let castle = include_bytes!("../castle.vox");
+        let chr_knight = include_bytes!("../chr_knight.vox");
+        let rust_logo = include_bytes!("../rust.vox");
+        let c_plus_plus = include_bytes!("../cplusplus.vox");
+        let c_sharp = include_bytes!("../csharp.vox");
+        let docker = include_bytes!("../docker.vox");
+        let hb_fugl = include_bytes!("../hbfugl.vox");
+        let femo_snake = include_bytes!("../femoslangen.vox");
 
         let mut voxel_handler = VoxelHandler::new();
         voxel_handler.add_voxel(test, VoxelObjects::Buttplug);
@@ -684,6 +765,46 @@ impl Gameloop {
         );
         let camera_transition_handler = TransitionHandler::new(camera_transition);
 
+        //Bad Apple setup
+
+        let pixel_bin = include_bytes!("../pixels.bin");
+        let chunks: Vec<&[u8]> = pixel_bin.chunks(9943).collect();
+        // for (name, bytes) in assets::ASSETS.iter().enumerate() {
+        //     println!("{} -> {} bytes", name, bytes.len());
+        // }
+        let bit_chunks: Vec<Vec<u8>> = chunks
+            .iter()
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .flat_map(|byte| (0..8).rev().map(move |bit| (byte >> bit) & 1))
+                    .rev()
+                    .collect::<Vec<u8>>()
+            })
+            .collect();
+
+        // Example: print the first 20 bits of the first chunk
+        println!("{:?}", &bit_chunks[514].len());
+        let ba_width = 326;
+        let ba_height = 244;
+
+        for chunk in &bit_chunks {
+            let mut voxel_canvas = Vec::with_capacity(ba_height * ba_width);
+
+            for (i, &value) in chunk.iter().enumerate() {
+                if value == 1 {
+                    let x = i % ba_width;
+                    let y = i / ba_width;
+                    if (x == 326 || x == 0 || y == 0 || y == 244) {
+                        continue;
+                    }
+                    voxel_canvas.push(Vector3::new(x as f32, y as f32, 0.0));
+                }
+            }
+
+            voxel_handler.add_custom_voxel(&voxel_canvas, VoxelObjects::BadApple);
+        }
+
         Gameloop {
             name,
             device,
@@ -693,10 +814,17 @@ impl Gameloop {
             instance_controllers,
             cursor_position: PhysicalPosition { x: 0.0, y: 0.0 },
             elapsed_time: 0.0,
+            elapsed_acc: 0.0,
             voxel_helper: voxel_handler,
             animation_handler,
             camera_transition_handler,
             transition_handler,
+            bad_apple: ba,
+            bad_apple_toggle: false,
+            bad_apple_data: bit_chunks.clone(),
+            bad_apple_index: 0,
         }
     }
 }
+
+//PACK TO TAR

@@ -124,6 +124,7 @@ impl AnimationPersistent {
         }
     }
 }
+
 #[derive(Clone)]
 pub struct AnimationStep {
     movement_vector: Vector3<f32>,
@@ -134,6 +135,8 @@ pub struct AnimationStep {
     speed: f32,
     animation_transition: AnimationTransition,
     is_static: bool,
+    instant: bool,
+    id: i32,
 }
 
 impl AnimationStep {
@@ -144,7 +147,9 @@ impl AnimationStep {
         reversed: bool,
         activated: bool,
         is_static: bool,
+        instant: bool,
         animation_transition: AnimationTransition,
+        id: i32,
     ) -> Self {
         Self {
             movement_vector,
@@ -153,8 +158,10 @@ impl AnimationStep {
             activated,
             speed,
             is_static,
+            instant,
             animating: false,
             animation_transition,
+            id,
         }
     }
 }
@@ -168,7 +175,7 @@ pub struct Animation {
     pub grid_pos: Vector3<f32>,
     persistent_animation: Vec<AnimationPersistent>,
 
-    animations: Vec<AnimationStep>,
+    pub animations: Vec<AnimationStep>,
     color: Vector3<f32>,
     animate_color: bool,
 }
@@ -250,7 +257,17 @@ impl AnimationHandler {
                     animation.persistent_animation.push(animation_persistent);
                 }
                 AnimationType::Step(animation_step) => {
+                    // if animation_step.id != 0 {
+                    //     if let Some(existing) = animation
+                    //         .animations
+                    //         .iter_mut()
+                    //         .find(|a| a.id == animation_step.id)
+                    //     {
+                    //         *existing = animation_step;
+                    //     }
+                    // } else {
                     animation.animations.push(animation_step);
+                    // }
                 }
             }
         }
@@ -348,25 +365,31 @@ impl AnimationHandler {
                     continue;
                 }
 
-                if step.reversed {
-                    step.time -= delta * step.speed;
-                    step.time = step.time.clamp(0.0, 1.0);
-                    step_movement -= step.animation_transition.lerp(
-                        animation.start + step.movement_vector,
-                        animation.start,
-                        step.time,
-                        0.0,
-                    ) - (animation.start + step.movement_vector);
+                if step.instant {
+                    step.time = 1.0;
+                    step_movement = (animation.start + step.movement_vector) - animation.start;
                 } else {
-                    step.time += delta * step.speed;
-                    step.time = step.time.clamp(0.0, 1.0);
-                    step_movement += step.animation_transition.lerp(
-                        animation.start,
-                        animation.start + step.movement_vector,
-                        step.time,
-                        0.0,
-                    ) - animation.start;
-                };
+                    if step.reversed {
+                        step.time -= delta * step.speed;
+                        step.time = step.time.clamp(0.0, 1.0);
+                        step_movement -= step.animation_transition.lerp(
+                            animation.start + step.movement_vector,
+                            animation.start,
+                            step.time,
+                            0.0,
+                        ) - (animation.start + step.movement_vector);
+                    } else {
+                        step.time += delta * step.speed;
+                        step.time = step.time.clamp(0.0, 1.0);
+                        step_movement += step.animation_transition.lerp(
+                            animation.start,
+                            animation.start + step.movement_vector,
+                            step.time,
+                            0.0,
+                        ) - animation.start;
+                    };
+                }
+
                 if step.time == 0.0 || step.time == 1.0 {
                     step.animating = false
                 }
@@ -384,6 +407,10 @@ impl AnimationHandler {
                 !((step.reversed && step.time == 0.0) || (step.is_static && step.time == 1.0))
             });
         }
+    }
+
+    pub fn reorder_instance_list(&mut self, instance_list: Vec<Instance>) {
+        for instance in instance_list {}
     }
 
     pub fn update_instance(&mut self, index: usize, instance: &mut Instance) {
